@@ -4,7 +4,7 @@ Both backends run MegaDetector, classify animal detections one at a time, and se
 each classification through SpeciesNet's ensemble (geofencing + taxonomic rollup).
 They differ only in how a detection becomes classifier input:
 
-- "upstream": SpeciesNet's built-in per-detection mode (speciesnet >= 5.0.4).
+- "upstream": SpeciesNet's built-in per-detection mode (in speciesnet 5.0.6, not 5.0.3).
   Crops every detection above the threshold (humans and vehicles too) with torch.
 - "crop": this project's original method, written before upstream supported
   per-detection classification. Crops animal detections only, resized to 480x480

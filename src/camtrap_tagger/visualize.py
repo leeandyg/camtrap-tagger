@@ -97,7 +97,8 @@ def find_label_position(bbox_pixels, text_width, text_height, img_size, placed_l
     return (x, y), (x, y, x + label_width, y + label_height)
 
 
-def draw_bbox_with_label(draw, img_size, bbox, label_lines, color, placed_labels, line_width=3):
+def draw_bbox_with_label(draw, img_size, bbox, label_lines, color, placed_labels, line_width=3,
+                         font_size=16):
     """Draw a bounding box with label text, avoiding overlap with other labels."""
     img_w, img_h = img_size
     xmin, ymin, w, h = bbox
@@ -113,14 +114,14 @@ def draw_bbox_with_label(draw, img_size, bbox, label_lines, color, placed_labels
         draw.rectangle([left - i, top - i, right + i, bottom + i], outline=color)
 
     # Get font and calculate text dimensions
-    font = get_font(16)
+    font = get_font(font_size)
     text = "\n".join(label_lines)
     text_bbox = draw.textbbox((0, 0), text, font=font)
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
 
     # Find non-overlapping position
-    padding = 4
+    padding = font_size // 4
     (label_x, label_y), label_rect = find_label_position(
         (left, top, right, bottom),
         text_width, text_height,
@@ -140,9 +141,9 @@ def draw_bbox_with_label(draw, img_size, bbox, label_lines, color, placed_labels
     return label_rect
 
 
-def draw_text_overlay(draw, img_size, text_lines, color, placed_labels):
+def draw_text_overlay(draw, img_size, text_lines, color, placed_labels, font_size=20):
     """Draw text overlay for detector-missed cases (no bbox)."""
-    font = get_font(20)
+    font = get_font(font_size)
     text = "\n".join(text_lines)
 
     text_bbox = draw.textbbox((0, 0), text, font=font)
@@ -249,6 +250,10 @@ def draw_image(filepath, detections):
         img = img.convert("RGB")
     draw = ImageDraw.Draw(img)
 
+    # Scale text and lines with image width so labels stay readable on large frames
+    font_size = max(16, img.width // 64)
+    line_width = max(3, img.width // 400)
+
     # Track placed label positions to avoid overlap
     placed_labels = []
 
@@ -260,10 +265,12 @@ def draw_image(filepath, detections):
 
         label_lines = format_label(det)
         if det.get("bbox"):
-            label_rect = draw_bbox_with_label(draw, img.size, det["bbox"], label_lines, color, placed_labels)
+            label_rect = draw_bbox_with_label(draw, img.size, det["bbox"], label_lines, color,
+                                              placed_labels, line_width, font_size)
         else:
             # Detector missed - draw text overlay (no bbox)
-            label_rect = draw_text_overlay(draw, img.size, label_lines, color, placed_labels)
+            label_rect = draw_text_overlay(draw, img.size, label_lines, color, placed_labels,
+                                           font_size + font_size // 4)
         placed_labels.append(label_rect)
 
     return img
