@@ -4,9 +4,11 @@ Turns SpeciesNet prediction dicts (as produced by `pipeline.run`) into the
 camtrap-tagger results file, and sorts images into review folders.
 """
 
+import csv
 import json
 import os
 import shutil
+from collections import Counter, defaultdict
 from datetime import datetime
 from importlib.metadata import version
 
@@ -209,6 +211,20 @@ def image_entries(pred, threshold):
     }]
 
 
+def species_counts(entries):
+    """Animal detections and images per label, most detections first.
+
+    Counts detections, not individuals: the same animal in a burst of photos counts once per photo.
+    """
+    detections, images = Counter(), defaultdict(set)
+    for e in entries:
+        if e["category"] == "animal":
+            detections[e["prediction"]] += 1
+            images[e["prediction"]].add(e["filepath"])
+    return {label: {"detections": n, "images": len(images[label])}
+            for label, n in detections.most_common()}
+
+
 def build_results(predictions, metadata, threshold):
     """Flatten SpeciesNet predictions into the results dict (metadata, predictions, summary)."""
     entries = [e for pred in predictions for e in image_entries(pred, threshold)]
@@ -236,6 +252,7 @@ def build_results(predictions, metadata, threshold):
             summary["confidence_rollups"] += 1
         if e.get("rollup_status") == "geofence_rollup":
             summary["geofencing_rollups"] += 1
+    summary["species"] = species_counts(entries)
 
     return {
         "metadata": {
@@ -253,6 +270,39 @@ def write_json(data, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
+
+
+CSV_COLUMNS = ["file", "detection_index", "category", "prediction", "species_conf", "detector_conf",
+               "bbox_x", "bbox_y", "bbox_width", "bbox_height", "prediction_raw", "rollup_status",
+               "prediction_source", "taxonomy_5part", "note"]
+
+
+def _rounded(value):
+    return round(value, 4) if isinstance(value, float) else value
+
+
+def write_csv(results, path, source_root):
+    """Write results.csv: one row per entry, file paths relative to source_root."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        for e in results["predictions"]:
+            bbox = e.get("bbox") or [None] * 4
+            row = {k: _rounded(e.get(k)) for k in CSV_COLUMNS}
+            row["file"] = os.path.relpath(e["filepath"], source_root)
+            row.update(zip(["bbox_x", "bbox_y", "bbox_width", "bbox_height"], map(_rounded, bbox)))
+            writer.writerow(row)
+
+
+def write_species_csv(results, path):
+    """Write species_counts.csv: one row per animal label."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["species", "detections", "images"])
+        for label, counts in results["summary"]["species"].items():
+            writer.writerow([label, counts["detections"], counts["images"]])
 
 
 def mirrored_path(filepath, source_root, dest_root):

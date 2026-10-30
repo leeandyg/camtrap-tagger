@@ -7,8 +7,11 @@ import re
 from speciesnet.geolocation import US_ADMIN1_REGION_TO_ABBREVIATION
 
 from camtrap_tagger import pipeline
-from camtrap_tagger.results import sort_for_review, write_json
+from camtrap_tagger.results import sort_for_review, write_csv, write_json, write_species_csv
 from camtrap_tagger.visualize import visualize_results
+
+
+SPECIES_SHOWN = 15
 
 
 def parse_args(argv=None):
@@ -65,8 +68,9 @@ def main(argv=None):
         crops_dir=os.path.join(out, "crops") if args.backend == "crop" else None,
     )
 
-    results_path = os.path.join(out, "results.json")
-    write_json(results, results_path)
+    write_json(results, os.path.join(out, "results.json"))
+    write_csv(results, os.path.join(out, "results.csv"), source)
+    write_species_csv(results, os.path.join(out, "species_counts.csv"))
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
 
@@ -92,12 +96,20 @@ def print_summary(results, out, review_counts, visualized):
     if summary["detector_missed"]:
         print(f"  - Detector missed:    {summary['detector_missed']} (found by whole-image recheck)")
 
+    species = summary["species"]
+    if species:
+        print(f"\nSpecies ({len(species)} labels; detections / images):")
+        for label, counts in list(species.items())[:SPECIES_SHOWN]:
+            print(f"  - {label + ':':28}{counts['detections']:>5} / {counts['images']}")
+        if len(species) > SPECIES_SHOWN:
+            print(f"  ... {len(species) - SPECIES_SHOWN} more in species_counts.csv")
+
     if metadata["geofencing_applied"]:
         print(f"\nGeofencing ({metadata['country']}):")
         print(f"  - Species rolled up:  {summary['geofencing_rollups']}")
     print(f"  - Confidence rollups:  {summary['confidence_rollups']}")
 
-    print(f"\nResults:         {os.path.join(out, 'results.json')}")
+    print(f"\nResults:         {os.path.join(out, 'results.json')} (also results.csv)")
     if visualized:
         print(f"Visualizations:  {os.path.join(out, 'visualizations')} ({visualized} images)")
     print(f"Review folders:  {os.path.join(out, 'review')} "

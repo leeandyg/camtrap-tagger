@@ -90,7 +90,9 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
 
 ```
 <folder>_tagged/
-  results.json                 one entry per detection + summary
+  results.json                 one entry per detection + summary (counts per category and species)
+  results.csv                  the same entries as a spreadsheet, paths relative to the input
+  species_counts.csv           animal detections and images per species
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
   visualizations/              images with boxes and labels
   review/blank/                images with nothing found
@@ -137,6 +139,8 @@ Each entry in `results.json` is one detection:
   geofencing and rollup. The `taxonomy_*` fields describe `prediction_raw`.
 - `bbox` is `[x, y, width, height]` as fractions of the image size. It is `null` for animals
   found by the whole-image recheck, which also carry `"note": "detector_missed"`.
+- Species counts count detections, not individuals: a deer that appears in five photos of a
+  burst counts five times.
 
 ## Evaluation
 

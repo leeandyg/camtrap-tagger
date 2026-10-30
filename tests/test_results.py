@@ -1,3 +1,6 @@
+import csv
+import os
+
 import pytest
 
 from camtrap_tagger.results import (
@@ -6,6 +9,8 @@ from camtrap_tagger.results import (
     image_entries,
     parse_ensemble_prediction,
     parse_taxonomy_label,
+    write_csv,
+    write_species_csv,
 )
 
 DEER = "5c7ce479-8a45-40b3-ae21-7c97dfae22f5;mammalia;artiodactyla;cervidae;odocoileus;virginianus;white-tailed deer"
@@ -196,3 +201,51 @@ def test_build_results_summary():
     assert s["detector_missed"] == 1
     assert s["confidence_rollups"] == 1
     assert results["metadata"]["geofencing_applied"] is True
+
+
+# ---- species counts and CSV output ----
+
+def test_species_counts_by_detection_and_image():
+    predictions = [
+        {"filepath": "/data/a.jpg", "detections": [
+            detection(raw=DEER, processed={"class": DEER, "score": 0.9, "source": "classifier"}),
+            detection(raw=DEER, processed={"class": DEER, "score": 0.9, "source": "classifier"}),
+            detection("human"),
+        ]},
+        {"filepath": "/data/b.jpg", "detections": [
+            detection(raw=DEER, processed={"class": DEER, "score": 0.9, "source": "classifier"}),
+            detection(raw=DEER, processed={"class": CERVIDAE, "score": 0.9, "source": "classifier+rollup_to_family"}),
+        ]},
+        {"filepath": "/data/c.jpg", "detections": []},
+    ]
+    species = build_results(predictions, {}, threshold=0.1)["summary"]["species"]
+    assert species == {
+        "white-tailed deer": {"detections": 3, "images": 2},
+        "cervidae family": {"detections": 1, "images": 1},
+    }
+    assert list(species) == ["white-tailed deer", "cervidae family"]
+
+
+def test_write_csvs(tmp_path):
+    predictions = [
+        {"filepath": str(tmp_path / "site1" / "a.jpg"), "detections": [
+            detection(bbox=(0.123456, 0.2, 0.3, 0.4), raw=DEER,
+                      processed={"class": DEER, "score": 0.987654, "source": "classifier"}),
+        ]},
+        {"filepath": str(tmp_path / "b.jpg"), "detections": []},
+    ]
+    results = build_results(predictions, {}, threshold=0.1)
+    write_csv(results, str(tmp_path / "out" / "results.csv"), str(tmp_path))
+    write_species_csv(results, str(tmp_path / "out" / "species_counts.csv"))
+
+    with open(tmp_path / "out" / "results.csv", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["file"] for r in rows] == [os.path.join("site1", "a.jpg"), "b.jpg"]
+    assert rows[0]["prediction"] == "white-tailed deer"
+    assert rows[0]["species_conf"] == "0.9877"
+    assert rows[0]["bbox_x"] == "0.1235"
+    assert rows[1]["category"] == "blank" and rows[1]["bbox_x"] == ""
+
+    with open(tmp_path / "out" / "species_counts.csv", newline="") as f:
+        assert list(csv.reader(f)) == [["species", "detections", "images"],
+                                       ["white-tailed deer", "1", "1"]]
