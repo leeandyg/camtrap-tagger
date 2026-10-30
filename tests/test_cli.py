@@ -10,6 +10,7 @@ def test_defaults():
     assert args.threshold == 0.1
     assert args.country is None
     assert args.recheck is False
+    assert args.review_below == 0.8
 
 
 def test_location_is_uppercased():
@@ -24,6 +25,7 @@ def test_location_is_uppercased():
     ["--country", "KEN", "--admin1-region", "CA"],
     ["--country", "USA", "--admin1-region", "XX"],
     ["--threshold", "1.5"],
+    ["--review-below", "80"],
     ["--backend", "megadetector"],
 ])
 def test_bad_arguments_are_rejected(argv, capsys):

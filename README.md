@@ -26,7 +26,8 @@ classifier).
    rather than a wrong guess.
 4. **Draws** color-coded boxes with detector and species confidence, placing labels so they
    don't overlap.
-5. **Sorts** blank and unknown images into review folders.
+5. **Lists what needs checking** in `review.csv` and sorts blank and unknown images into
+   review folders.
 6. **Writes one flat results file** with one entry per detection.
 7. **Optionally rechecks empty frames** (`--recheck`) with SpeciesNet's whole-image classifier,
    reporting only confident results. In testing this rarely found a missed animal; see
@@ -87,6 +88,7 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
 | `--file-times` | off | Use file modified times for images without an EXIF capture time |
 | `--event-gap MINUTES` | `30` | Images from one deployment this close together form one event |
+| `--review-below CONF` | `0.8` | Flag labels below this confidence in `review.csv` (see below) |
 | `--timelapse` | off | Also write a recognition file for review in [Timelapse](https://timelapse.ucalgary.ca) |
 | `--camtrap-dp` | off | Also write a [Camtrap DP](https://camtrap-dp.tdwg.org) data package (see below) |
 | `--timezone TZ` | none | Time zone of the camera clocks, e.g. `America/Los_Angeles` or `-07:00` |
@@ -104,6 +106,7 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
   species_counts.csv           animal detections, images and events per species
   deployments.csv              per deployment: coordinates, dates, image and detection counts
   events.csv                   independent events: one row per species per event, with counts
+  review.csv                   images worth a human look, with the reasons
   timelapse_recognition.json   MegaDetector-format file for Timelapse (with --timelapse)
   camtrap-dp/                  Camtrap DP package (with --camtrap-dp)
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
@@ -149,6 +152,33 @@ not the sum over the burst. Because SpeciesNet may label the same animal "white-
 in one frame and "cervidae family" or "unknown" in the next, a broader label is merged into a
 more specific one in the same event when there is only one candidate; with two (say, mule deer
 and white-tailed deer), it stays its own row.
+
+### Review list
+
+`review.csv` lists the images whose labels deserve a second look, one row per image, in
+deployment and capture-time order (with `event_id`, so a whole event can be checked at once).
+Confidence alone isn't a good filter: SpeciesNet only names a species when its score clears
+0.65–0.8, and otherwise falls back to a broader label. So a detection is flagged when:
+
+| Reason | Meaning |
+|---|---|
+| `unknown` | no label at all |
+| `detector_disagrees` | SpeciesNet overruled the detector, e.g. an "animal" box labelled human |
+| `recheck_only` | found only by the whole-image recheck, without a detector box |
+| `outside_range` | the top species isn't expected at `--country`/`--admin1-region`, so the label was broadened (a model error, or a range record worth confirming) |
+| `not_species_level` | labelled above species: genus, family, ... or just "animal" |
+| `low_confidence` | the label's confidence is below `--review-below` (default 0.8) |
+
+Blank images aren't listed; they are already copied to `review/blank/`. The `detections`
+column describes every detection in the image and gives the model's top guess for broadened
+labels:
+
+```
+0: cat family 1.00 (top guess: tiger) [outside_range]; 1: human 0.99
+```
+
+The same reasons are in the `review_reasons` column of `results.csv`. On new data expect a long
+list: in the [evaluation](#evaluation) only 30–49% of animals got the exact species.
 
 ### Review in Timelapse
 
@@ -230,7 +260,8 @@ Each entry in `results.json` is one detection:
   "bbox": [0.564, 0.827, 0.112, 0.143],
   "rollup_status": "confidence_rollup",
   "prediction_source": "classifier+rollup_to_family",
-  "taxonomy_5part": "mammalia;lagomorpha;leporidae;sylvilagus;floridanus"
+  "taxonomy_5part": "mammalia;lagomorpha;leporidae;sylvilagus;floridanus",
+  "review_reasons": ["not_species_level", "low_confidence"]
 }
 ```
 
@@ -241,6 +272,8 @@ Each entry in `results.json` is one detection:
   found by the whole-image recheck, which also carry `"note": "detector_missed"`.
 - `detector_label` is what MegaDetector called the box (animal, human or vehicle) before
   SpeciesNet's decision; `category` is the final answer.
+- `review_reasons` lists why the detection needs review (see [Review list](#review-list));
+  empty if it doesn't.
 - `event_id` links the detection to its row in `events.csv`. In the species counts,
   `detections` counts every photo (a deer in five burst photos counts five times) while
   `events` counts independent visits.
@@ -295,12 +328,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~100 tests, a few seconds, no models needed
+uv run pytest        # ~110 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
 `backends.py`, `metadata.py` (capture times and deployments), `events.py`, `camtrapdp.py`,
-`timelapse.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
+`timelapse.py`, `review.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 

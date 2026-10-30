@@ -14,6 +14,7 @@ from camtrap_tagger.backends import CropBackend, UpstreamBackend
 from camtrap_tagger.events import DEFAULT_GAP_MINUTES
 from camtrap_tagger.metadata import assign_deployments, read_timestamp
 from camtrap_tagger.results import build_results, parse_ensemble_prediction
+from camtrap_tagger.review import DEFAULT_REVIEW_BELOW
 
 WHOLE_IMAGE_MODEL = "kaggle:google/speciesnet/pyTorch/v4.0.3b/1"
 DEFAULT_THRESHOLD = 0.1
@@ -83,13 +84,13 @@ def recheck_blanks(predictions, ensemble, model_name, country=None, admin1_regio
 def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WHOLE_IMAGE_MODEL,
         country=None, admin1_region=None, threshold=DEFAULT_THRESHOLD, recheck=False,
         crops_dir=None, deployments=None, file_time_fallback=False,
-        event_gap=DEFAULT_GAP_MINUTES):
+        event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW):
     """Tag every image under `source`.
 
     `deployments` is an optional list from metadata.load_deployment_sheet; without it each
     folder is its own deployment. `file_time_fallback` uses file modified times for images
     without an EXIF capture time. `event_gap` is the minutes between images that starts a new
-    event.
+    event. Labels below `review_below` confidence are flagged for review.
 
     Returns (results, predictions): the flat per-detection results dict, and the raw
     SpeciesNet predictions it was built from.
@@ -141,6 +142,7 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
         "timing_seconds": timing,
     }
     metadata["event_gap_minutes"] = event_gap
+    metadata["review_below"] = review_below
     results = build_results(predictions, metadata, threshold, image_info, all_deployments, warnings,
-                            event_gap)
+                            event_gap, review_below)
     return results, predictions

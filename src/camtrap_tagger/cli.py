@@ -22,6 +22,7 @@ from camtrap_tagger.results import (
     write_json,
     write_species_csv,
 )
+from camtrap_tagger.review import DEFAULT_REVIEW_BELOW, REASONS, write_review_csv
 from camtrap_tagger.timelapse import write_recognition_file
 from camtrap_tagger.visualize import visualize_results
 
@@ -56,6 +57,9 @@ def parse_args(argv=None):
                         metavar="MINUTES",
                         help="images from one deployment this close together form one event "
                              f"(default: {pipeline.DEFAULT_GAP_MINUTES})")
+    parser.add_argument("--review-below", type=float, default=DEFAULT_REVIEW_BELOW, metavar="CONF",
+                        help="flag labels below this confidence in review.csv, along with "
+                             f"unknowns and labels above species level (default: {DEFAULT_REVIEW_BELOW})")
     parser.add_argument("--timelapse", action="store_true",
                         help="also write timelapse_recognition.json (MegaDetector format) for review "
                              "in Timelapse; open the input folder as the Timelapse image set")
@@ -86,6 +90,8 @@ def parse_args(argv=None):
             parser.error(f"--admin1-region must be a US state code like CA or NY (got '{args.admin1_region}')")
     if not 0 <= args.threshold <= 1:
         parser.error("--threshold must be between 0 and 1")
+    if not 0 <= args.review_below <= 1:
+        parser.error("--review-below must be between 0 and 1")
     if args.event_gap <= 0:
         parser.error("--event-gap must be more than 0 minutes")
     if args.camtrap_dp:
@@ -135,6 +141,7 @@ def main(argv=None):
         deployments=deployments,
         file_time_fallback=args.file_times,
         event_gap=args.event_gap,
+        review_below=args.review_below,
     )
 
     write_json(results, os.path.join(out, "results.json"))
@@ -142,6 +149,7 @@ def main(argv=None):
     write_species_csv(results, os.path.join(out, "species_counts.csv"))
     write_deployments_csv(results, os.path.join(out, "deployments.csv"))
     write_events_csv(results, os.path.join(out, "events.csv"))
+    write_review_csv(results, os.path.join(out, "review.csv"), source)
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
     if args.timelapse:
@@ -197,6 +205,13 @@ def print_summary(results, out, review_counts, visualized):
     if summary["events"]:
         print(f"\nEvents: {summary['events']} (images under {metadata['event_gap_minutes']:g} "
               "minutes apart at one deployment; events.csv)")
+
+    review = summary["review"]
+    if review["images"]:
+        print(f"\nNeeds review: {review['images']} images, {review['detections']} detections "
+              f"(review.csv; confidence threshold {metadata['review_below']:g}):")
+        for reason, n in review["by_reason"].items():
+            print(f"  - {reason + ':':28}{n:>5}  {REASONS[reason]}")
 
     deployments = results["deployments"]
     if len(deployments) > 1 or any(d["latitude"] is not None for d in deployments):

@@ -13,6 +13,7 @@ from datetime import datetime
 from importlib.metadata import version
 
 from camtrap_tagger.events import DEFAULT_GAP_MINUTES, build_events
+from camtrap_tagger.review import DEFAULT_REVIEW_BELOW, review_reasons, review_summary
 
 
 def parse_taxonomy_label(label):
@@ -255,12 +256,13 @@ def deployment_summary(deployments, image_info, entries):
 
 
 def build_results(predictions, metadata, threshold, image_info=None, deployments=None,
-                  warnings=None, event_gap=DEFAULT_GAP_MINUTES):
+                  warnings=None, event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW):
     """Flatten SpeciesNet predictions into the results dict.
 
     image_info maps filepath → deployment_id, timestamp, timestamp_source and
     outside_deployment (from pipeline.run); those fields are added to every entry. Images
-    with timestamps are grouped into events `event_gap` minutes apart.
+    with timestamps are grouped into events `event_gap` minutes apart. Each entry gets
+    `review_reasons` (see review.py), using `review_below` as the confidence cutoff.
     """
     image_info = image_info or {}
     entries = [
@@ -270,6 +272,7 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
     events, event_of = build_events(entries, event_gap)
     for e in entries:
         e["event_id"] = event_of.get(e["filepath"])
+        e["review_reasons"] = review_reasons(e, review_below)
 
     summary = {
         "total_images": len(predictions),
@@ -300,6 +303,7 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
     summary["images_with_file_time"] = sum(
         i["timestamp_source"] == "file_modified" for i in image_info.values())
     summary["images_outside_deployment"] = sum(i["outside_deployment"] for i in image_info.values())
+    summary["review"] = review_summary(entries)
 
     return {
         "metadata": {
@@ -326,7 +330,7 @@ CSV_COLUMNS = ["file", "deployment_id", "timestamp", "event_id", "detection_inde
                "prediction",
                "species_conf", "detector_conf", "bbox_x", "bbox_y", "bbox_width", "bbox_height",
                "prediction_raw", "rollup_status", "prediction_source", "taxonomy_5part", "note",
-               "timestamp_source", "outside_deployment"]
+               "timestamp_source", "outside_deployment", "review_reasons"]
 DEPLOYMENT_COLUMNS = ["deploymentID", "folder", "latitude", "longitude", "start", "end",
                       "locationName", "images", "first_image", "last_image",
                       "images_outside_deployment", "animal_detections"]
@@ -346,6 +350,7 @@ def write_csv(results, path, source_root):
             bbox = e.get("bbox") or [None] * 4
             row = {k: _rounded(e.get(k)) for k in CSV_COLUMNS}
             row["file"] = os.path.relpath(e["filepath"], source_root)
+            row["review_reasons"] = ";".join(e.get("review_reasons") or [])
             row.update(zip(["bbox_x", "bbox_y", "bbox_width", "bbox_height"], map(_rounded, bbox)))
             writer.writerow(row)
 
