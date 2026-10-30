@@ -146,6 +146,7 @@ def detection_entry(filepath, detection_index, det):
         "prediction_source": "detector",
         "species_conf": None,
         "bbox": None if whole_image else det.get("bbox"),
+        "detector_label": None if whole_image else det.get("label"),
         "detector_conf": None if whole_image else det.get("conf"),
         "crop_filepath": det.get("crop_filepath"),
     }

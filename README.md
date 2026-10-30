@@ -87,6 +87,7 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
 | `--file-times` | off | Use file modified times for images without an EXIF capture time |
 | `--event-gap MINUTES` | `30` | Images from one deployment this close together form one event |
+| `--timelapse` | off | Also write a recognition file for review in [Timelapse](https://timelapse.ucalgary.ca) |
 | `--camtrap-dp` | off | Also write a [Camtrap DP](https://camtrap-dp.tdwg.org) data package (see below) |
 | `--timezone TZ` | none | Time zone of the camera clocks, e.g. `America/Los_Angeles` or `-07:00` |
 | `--project-title TEXT` | folder name | Camtrap DP project title |
@@ -103,6 +104,7 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
   species_counts.csv           animal detections, images and events per species
   deployments.csv              per deployment: coordinates, dates, image and detection counts
   events.csv                   independent events: one row per species per event, with counts
+  timelapse_recognition.json   MegaDetector-format file for Timelapse (with --timelapse)
   camtrap-dp/                  Camtrap DP package (with --camtrap-dp)
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
   visualizations/              images with boxes and labels
@@ -147,6 +149,23 @@ not the sum over the burst. Because SpeciesNet may label the same animal "white-
 in one frame and "cervidae family" or "unknown" in the next, a broader label is merged into a
 more specific one in the same event when there is only one candidate; with two (say, mule deer
 and white-tailed deer), it stays its own row.
+
+### Review in Timelapse
+
+AI labels need checking. [Timelapse](https://timelapse.ucalgary.ca), a free image-review app
+(Windows), can show each box with its AI label so you can filter, confirm and correct them.
+`--timelapse` writes `timelapse_recognition.json` in the MegaDetector batch output format (1.6)
+that Timelapse imports:
+
+- Each box keeps the detector's category (animal / person / vehicle) and confidence, and carries
+  the final label as its classification, so you can filter on "detector says animal" and on
+  "classified as white-tailed deer". Where SpeciesNet overruled the detector (a "vehicle" box
+  classified as a person), both are visible.
+- Image paths are relative to the input folder: open that folder as the Timelapse image set,
+  then import the file.
+
+The file passes MegaDetector's own format validator (`validate_batch_results`, including the
+check that every path points to an image). It has not been tested inside Timelapse itself.
 
 ### Camtrap DP export
 
@@ -220,6 +239,8 @@ Each entry in `results.json` is one detection:
   geofencing and rollup. The `taxonomy_*` fields describe `prediction_raw`.
 - `bbox` is `[x, y, width, height]` as fractions of the image size. It is `null` for animals
   found by the whole-image recheck, which also carry `"note": "detector_missed"`.
+- `detector_label` is what MegaDetector called the box (animal, human or vehicle) before
+  SpeciesNet's decision; `category` is the final answer.
 - `event_id` links the detection to its row in `events.csv`. In the species counts,
   `detections` counts every photo (a deer in five burst photos counts five times) while
   `events` counts independent visits.
@@ -274,12 +295,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~95 tests, a few seconds, no models needed
+uv run pytest        # ~100 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
 `backends.py`, `metadata.py` (capture times and deployments), `events.py`, `camtrapdp.py`,
-`results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
+`timelapse.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 

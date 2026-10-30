@@ -22,6 +22,7 @@ from camtrap_tagger.results import (
     write_json,
     write_species_csv,
 )
+from camtrap_tagger.timelapse import write_recognition_file
 from camtrap_tagger.visualize import visualize_results
 
 SPECIES_SHOWN = 15
@@ -55,6 +56,9 @@ def parse_args(argv=None):
                         metavar="MINUTES",
                         help="images from one deployment this close together form one event "
                              f"(default: {pipeline.DEFAULT_GAP_MINUTES})")
+    parser.add_argument("--timelapse", action="store_true",
+                        help="also write timelapse_recognition.json (MegaDetector format) for review "
+                             "in Timelapse; open the input folder as the Timelapse image set")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
 
     dp = parser.add_argument_group("Camtrap DP export (needs --deployments with coordinates and dates)")
@@ -140,6 +144,8 @@ def main(argv=None):
     write_events_csv(results, os.path.join(out, "events.csv"))
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
+    if args.timelapse:
+        write_recognition_file(results, os.path.join(out, "timelapse_recognition.json"), source)
 
     if args.camtrap_dp:
         results["warnings"] += write_camtrap_dp(
@@ -157,6 +163,8 @@ def main(argv=None):
         visualized = visualize_results(results, source, os.path.join(out, "visualizations"))
 
     print_summary(results, out, review_counts, visualized)
+    if args.timelapse:
+        print(f"Timelapse:       {os.path.join(out, 'timelapse_recognition.json')}")
     if args.camtrap_dp:
         print(f"Camtrap DP:      {os.path.join(out, 'camtrap-dp')}")
 
