@@ -1,6 +1,7 @@
 """detect → classify → per-animal decisions → whole-image blank recheck → merge."""
 
 import os
+import time
 
 from speciesnet import DEFAULT_MODEL
 from speciesnet.classifier import SpeciesNetClassifier
@@ -76,17 +77,25 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
     if not filepaths:
         raise ValueError(f"No images found in {source}")
 
+    timing = {}
+    start = time.perf_counter()
     if backend == "crop":
         tagger = CropBackend(model, crops_dir=crops_dir, source_root=source)
     elif backend == "upstream":
         tagger = UpstreamBackend(model)
     else:
         raise ValueError(f"Unknown backend: {backend}")
+    timing["load_models"] = time.perf_counter() - start
 
+    start = time.perf_counter()
     predictions = tagger.predict(filepaths, country, admin1_region, threshold)
+    timing["detect_and_classify"] = time.perf_counter() - start
+
     if recheck:
-        recheck_blanks(predictions, tagger.ensemble, whole_image_model, country,
-                       admin1_region, threshold)
+        start = time.perf_counter()
+        timing["rechecked_images"] = recheck_blanks(
+            predictions, tagger.ensemble, whole_image_model, country, admin1_region, threshold)
+        timing["recheck"] = time.perf_counter() - start
 
     metadata = {
         "source_folder": os.path.abspath(source),
@@ -96,5 +105,6 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
         "threshold": threshold,
         "country": country,
         "admin1_region": admin1_region,
+        "timing_seconds": timing,
     }
     return build_results(predictions, metadata, threshold), predictions
