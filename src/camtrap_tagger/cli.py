@@ -12,6 +12,7 @@ from camtrap_tagger.results import (
     sort_for_review,
     write_csv,
     write_deployments_csv,
+    write_events_csv,
     write_json,
     write_species_csv,
 )
@@ -44,6 +45,10 @@ def parse_args(argv=None):
     parser.add_argument("--file-times", action="store_true",
                         help="use file modified times for images without an EXIF capture time "
                              "(only correct if files were copied off the card with dates kept)")
+    parser.add_argument("--event-gap", type=float, default=pipeline.DEFAULT_GAP_MINUTES,
+                        metavar="MINUTES",
+                        help="images from one deployment this close together form one event "
+                             f"(default: {pipeline.DEFAULT_GAP_MINUTES})")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
     args = parser.parse_args(argv)
 
@@ -60,6 +65,8 @@ def parse_args(argv=None):
             parser.error(f"--admin1-region must be a US state code like CA or NY (got '{args.admin1_region}')")
     if not 0 <= args.threshold <= 1:
         parser.error("--threshold must be between 0 and 1")
+    if args.event_gap <= 0:
+        parser.error("--event-gap must be more than 0 minutes")
     return args
 
 
@@ -90,12 +97,14 @@ def main(argv=None):
         crops_dir=os.path.join(out, "crops") if args.backend == "crop" else None,
         deployments=deployments,
         file_time_fallback=args.file_times,
+        event_gap=args.event_gap,
     )
 
     write_json(results, os.path.join(out, "results.json"))
     write_csv(results, os.path.join(out, "results.csv"), source)
     write_species_csv(results, os.path.join(out, "species_counts.csv"))
     write_deployments_csv(results, os.path.join(out, "deployments.csv"))
+    write_events_csv(results, os.path.join(out, "events.csv"))
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
 
@@ -123,11 +132,17 @@ def print_summary(results, out, review_counts, visualized):
 
     species = summary["species"]
     if species:
-        print(f"\nSpecies ({len(species)} labels; detections / images):")
+        events = summary["events"] > 0
+        columns = "detections / images" + (" / events" if events else "")
+        print(f"\nSpecies ({len(species)} labels; {columns}):")
         for label, counts in list(species.items())[:SPECIES_SHOWN]:
-            print(f"  - {label + ':':28}{counts['detections']:>5} / {counts['images']}")
+            line = f"  - {label + ':':28}{counts['detections']:>5} / {counts['images']}"
+            print(line + (f" / {counts['events']}" if events else ""))
         if len(species) > SPECIES_SHOWN:
             print(f"  ... {len(species) - SPECIES_SHOWN} more in species_counts.csv")
+    if summary["events"]:
+        print(f"\nEvents: {summary['events']} (images under {metadata['event_gap_minutes']:g} "
+              "minutes apart at one deployment; events.csv)")
 
     deployments = results["deployments"]
     if len(deployments) > 1 or any(d["latitude"] is not None for d in deployments):
@@ -141,7 +156,8 @@ def print_summary(results, out, review_counts, visualized):
     notes = list(results["warnings"])
     if summary["images_without_time"]:
         notes.append(f"{summary['images_without_time']} image(s) have no EXIF capture time; their "
-                     "timestamp is left empty (--file-times uses file modified times instead)")
+                     "timestamp is left empty and they aren't grouped into events "
+                     "(--file-times uses file modified times instead)")
     if summary["images_with_file_time"]:
         notes.append(f"{summary['images_with_file_time']} image(s) had no EXIF capture time; "
                      "used the file's modified time instead")

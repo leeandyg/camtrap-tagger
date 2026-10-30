@@ -220,8 +220,8 @@ def test_species_counts_by_detection_and_image():
     ]
     species = build_results(predictions, {}, threshold=0.1)["summary"]["species"]
     assert species == {
-        "white-tailed deer": {"detections": 3, "images": 2},
-        "cervidae family": {"detections": 1, "images": 1},
+        "white-tailed deer": {"detections": 3, "images": 2, "events": 0},  # no timestamps
+        "cervidae family": {"detections": 1, "images": 1, "events": 0},
     }
     assert list(species) == ["white-tailed deer", "cervidae family"]
 
@@ -247,5 +247,5 @@ def test_write_csvs(tmp_path):
     assert rows[1]["category"] == "blank" and rows[1]["bbox_x"] == ""
 
     with open(tmp_path / "out" / "species_counts.csv", newline="") as f:
-        assert list(csv.reader(f)) == [["species", "detections", "images"],
-                                       ["white-tailed deer", "1", "1"]]
+        assert list(csv.reader(f)) == [["species", "detections", "images", "events"],
+                                       ["white-tailed deer", "1", "1", "0"]]

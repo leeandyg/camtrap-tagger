@@ -11,6 +11,7 @@ from speciesnet.utils import IMG_EXTENSIONS, build_classifier_result, load_rgb_i
 from tqdm import tqdm
 
 from camtrap_tagger.backends import CropBackend, UpstreamBackend
+from camtrap_tagger.events import DEFAULT_GAP_MINUTES
 from camtrap_tagger.metadata import assign_deployments, read_timestamp
 from camtrap_tagger.results import build_results, parse_ensemble_prediction
 
@@ -81,12 +82,14 @@ def recheck_blanks(predictions, ensemble, model_name, country=None, admin1_regio
 
 def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WHOLE_IMAGE_MODEL,
         country=None, admin1_region=None, threshold=DEFAULT_THRESHOLD, recheck=False,
-        crops_dir=None, deployments=None, file_time_fallback=False):
+        crops_dir=None, deployments=None, file_time_fallback=False,
+        event_gap=DEFAULT_GAP_MINUTES):
     """Tag every image under `source`.
 
     `deployments` is an optional list from metadata.load_deployment_sheet; without it each
     folder is its own deployment. `file_time_fallback` uses file modified times for images
-    without an EXIF capture time.
+    without an EXIF capture time. `event_gap` is the minutes between images that starts a new
+    event.
 
     Returns (results, predictions): the flat per-detection results dict, and the raw
     SpeciesNet predictions it was built from.
@@ -137,5 +140,7 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
         "admin1_region": admin1_region,
         "timing_seconds": timing,
     }
-    results = build_results(predictions, metadata, threshold, image_info, all_deployments, warnings)
+    metadata["event_gap_minutes"] = event_gap
+    results = build_results(predictions, metadata, threshold, image_info, all_deployments, warnings,
+                            event_gap)
     return results, predictions

@@ -12,6 +12,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from importlib.metadata import version
 
+from camtrap_tagger.events import DEFAULT_GAP_MINUTES, build_events
+
 
 def parse_taxonomy_label(label):
     """
@@ -211,17 +213,19 @@ def image_entries(pred, threshold):
     }]
 
 
-def species_counts(entries):
-    """Animal detections and images per label, most detections first.
+def species_counts(entries, events=()):
+    """Animal detections, images and events per label, most detections first.
 
-    Counts detections, not individuals: the same animal in a burst of photos counts once per photo.
+    Detections count once per photo, so a burst inflates them; events count independent visits.
     """
     detections, images = Counter(), defaultdict(set)
     for e in entries:
         if e["category"] == "animal":
             detections[e["prediction"]] += 1
             images[e["prediction"]].add(e["filepath"])
-    return {label: {"detections": n, "images": len(images[label])}
+    in_events = Counter(o["label"] for ev in events for o in ev["observations"]
+                        if o["category"] == "animal")
+    return {label: {"detections": n, "images": len(images[label]), "events": in_events[label]}
             for label, n in detections.most_common()}
 
 
@@ -250,17 +254,21 @@ def deployment_summary(deployments, image_info, entries):
 
 
 def build_results(predictions, metadata, threshold, image_info=None, deployments=None,
-                  warnings=None):
+                  warnings=None, event_gap=DEFAULT_GAP_MINUTES):
     """Flatten SpeciesNet predictions into the results dict.
 
     image_info maps filepath → deployment_id, timestamp, timestamp_source and
-    outside_deployment (from pipeline.run); those fields are added to every entry.
+    outside_deployment (from pipeline.run); those fields are added to every entry. Images
+    with timestamps are grouped into events `event_gap` minutes apart.
     """
     image_info = image_info or {}
     entries = [
         {"filepath": e["filepath"], **image_info.get(pred["filepath"], {}), **e}
         for pred in predictions for e in image_entries(pred, threshold)
     ]
+    events, event_of = build_events(entries, event_gap)
+    for e in entries:
+        e["event_id"] = event_of.get(e["filepath"])
 
     summary = {
         "total_images": len(predictions),
@@ -285,7 +293,8 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
             summary["confidence_rollups"] += 1
         if e.get("rollup_status") == "geofence_rollup":
             summary["geofencing_rollups"] += 1
-    summary["species"] = species_counts(entries)
+    summary["species"] = species_counts(entries, events)
+    summary["events"] = len(events)
     summary["images_without_time"] = sum(i["timestamp"] is None for i in image_info.values())
     summary["images_with_file_time"] = sum(
         i["timestamp_source"] == "file_modified" for i in image_info.values())
@@ -301,6 +310,7 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
         "predictions": entries,
         "summary": summary,
         "deployments": deployment_summary(deployments or [], image_info, entries),
+        "events": events,
         "warnings": warnings or [],
     }
 
@@ -311,7 +321,8 @@ def write_json(data, path):
         json.dump(data, f, indent=2)
 
 
-CSV_COLUMNS = ["file", "deployment_id", "timestamp", "detection_index", "category", "prediction",
+CSV_COLUMNS = ["file", "deployment_id", "timestamp", "event_id", "detection_index", "category",
+               "prediction",
                "species_conf", "detector_conf", "bbox_x", "bbox_y", "bbox_width", "bbox_height",
                "prediction_raw", "rollup_status", "prediction_source", "taxonomy_5part", "note",
                "timestamp_source", "outside_deployment"]
@@ -347,14 +358,27 @@ def write_deployments_csv(results, path):
         writer.writerows(results["deployments"])
 
 
+def write_events_csv(results, path):
+    """Write events.csv: one row per observation (label) per event."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["event_id", "deployment_id", "start", "end", "images", "label",
+                         "category", "count", "confidence"])
+        for ev in results["events"]:
+            for o in ev["observations"]:
+                writer.writerow([ev["event_id"], ev["deployment_id"], ev["start"], ev["end"],
+                                 ev["images"], o["label"], o["category"], o["count"], o["confidence"]])
+
+
 def write_species_csv(results, path):
     """Write species_counts.csv: one row per animal label."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["species", "detections", "images"])
+        writer.writerow(["species", "detections", "images", "events"])
         for label, counts in results["summary"]["species"].items():
-            writer.writerow([label, counts["detections"], counts["images"]])
+            writer.writerow([label, counts["detections"], counts["images"], counts["events"]])
 
 
 def mirrored_path(filepath, source_root, dest_root):

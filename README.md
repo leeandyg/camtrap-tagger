@@ -86,6 +86,7 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--recheck` | off | Rerun frames with no detections through the whole-image model |
 | `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
 | `--file-times` | off | Use file modified times for images without an EXIF capture time |
+| `--event-gap MINUTES` | `30` | Images from one deployment this close together form one event |
 | `--no-viz` | | Don't draw boxes |
 
 Images are found recursively (jpg, png, tif, webp). Output mirrors the input's subfolders:
@@ -94,8 +95,9 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
 <folder>_tagged/
   results.json                 one entry per detection + summary (counts per category and species)
   results.csv                  the same entries as a spreadsheet, paths relative to the input
-  species_counts.csv           animal detections and images per species
+  species_counts.csv           animal detections, images and events per species
   deployments.csv              per deployment: coordinates, dates, image and detection counts
+  events.csv                   independent events: one row per species per event, with counts
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
   visualizations/              images with boxes and labels
   review/blank/                images with nothing found
@@ -126,6 +128,20 @@ folders that don't exist, with a suggestion for likely typos). Folders missing f
 get their own deployment, and images taken outside a deployment's dates are flagged
 (`outside_deployment` in `results.csv`).
 
+### Events
+
+Camera traps fire in bursts, so one deer can appear in a dozen photos. Ecologists count
+independent events (visits) instead: images from one deployment taken less than 30 minutes
+apart (`--event-gap`) form one event. Empty frames and images without a capture time are left
+out.
+
+Each event lists every species seen in it, so a deer and a turkey in the same visit give two
+rows in `events.csv`. The count for a species is the most of it seen in any single photo,
+not the sum over the burst. Because SpeciesNet may label the same animal "white-tailed deer"
+in one frame and "cervidae family" or "unknown" in the next, a broader label is merged into a
+more specific one in the same event when there is only one candidate; with two (say, mule deer
+and white-tailed deer), it stays its own row.
+
 ### Backends
 
 Both backends use the same detector and the same SpeciesNet decision rules. They differ in how a
@@ -151,6 +167,7 @@ Each entry in `results.json` is one detection:
   "timestamp": "2016-05-30T17:46:35",
   "timestamp_source": "exif",
   "outside_deployment": false,
+  "event_id": "site3-0012",
   "detection_index": 2,
   "category": "animal",
   "prediction": "rabbit and hare family",
@@ -169,8 +186,9 @@ Each entry in `results.json` is one detection:
   geofencing and rollup. The `taxonomy_*` fields describe `prediction_raw`.
 - `bbox` is `[x, y, width, height]` as fractions of the image size. It is `null` for animals
   found by the whole-image recheck, which also carry `"note": "detector_missed"`.
-- Species counts count detections, not individuals: a deer that appears in five photos of a
-  burst counts five times.
+- `event_id` links the detection to its row in `events.csv`. In the species counts,
+  `detections` counts every photo (a deer in five burst photos counts five times) while
+  `events` counts independent visits.
 
 ## Evaluation
 
@@ -222,12 +240,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~75 tests, a few seconds, no models needed
+uv run pytest        # ~80 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
-`backends.py`, `metadata.py` (capture times and deployments), `results.py`, `visualize.py`,
-`cli.py`. The evaluation scripts are in `eval/`.
+`backends.py`, `metadata.py` (capture times and deployments), `events.py`, `results.py`,
+`visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 
