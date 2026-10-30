@@ -211,8 +211,9 @@ Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank rech
   (CDLA-Permissive; Appel CL, Lesmeister DB, Kay J, Hallerud M, Tosa MI, Levi T. *Oregon Critters:
   A computer vision model for multispecies wildlife detection from two camera trap modalities.*
   In review) and [AMMonitor Camera Traps](https://lila.science/datasets/ammonitor-camera-traps/)
-  (a public-domain composite of ten datasets from the AMMonitor community; see that page for
-  each one's citation). No evaluation images are included in this repository.
+  (a public-domain composite of ten datasets from the AMMonitor community). Full citations for
+  every dataset are in [eval/DATA_CREDITS.md](eval/DATA_CREDITS.md). No evaluation images are
+  included in this repository.
 
 ## License
 

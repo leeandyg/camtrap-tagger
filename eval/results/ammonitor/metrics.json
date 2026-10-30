@@ -1,0 +1,144 @@
+{
+  "dataset": "AMMonitor Camera Traps",
+  "country": "USA",
+  "metrics": {
+    "upstream + recheck": {
+      "images": 500,
+      "truth_animals": 350,
+      "animal_outcomes": {
+        "exact": 171,
+        "coarser": 68,
+        "animal": 25,
+        "finer": 11,
+        "wrong": 37,
+        "unknown": 12,
+        "blank": 0,
+        "missed": 25,
+        "recovered": 1
+      },
+      "species_exact_rate": 0.48857142857142855,
+      "correct_any_level_rate": 0.7142857142857143,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 34,
+        "unknown": 11
+      },
+      "image_rates": {
+        "multi": 0.24,
+        "single": 0.804,
+        "empty": 0.945
+      },
+      "seconds_per_image": 0.3612562758317217,
+      "timing_seconds": {
+        "load_models": 0.7721869160886854,
+        "detect_and_classify": 127.86532045796048,
+        "rechecked_images": 191,
+        "recheck": 52.76281745790038
+      }
+    },
+    "upstream no recheck": {
+      "images": 500,
+      "truth_animals": 350,
+      "animal_outcomes": {
+        "exact": 171,
+        "coarser": 68,
+        "animal": 25,
+        "finer": 11,
+        "wrong": 37,
+        "unknown": 12,
+        "blank": 0,
+        "missed": 26,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.48857142857142855,
+      "correct_any_level_rate": 0.7142857142857143,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 34,
+        "unknown": 11
+      },
+      "image_rates": {
+        "multi": 0.24,
+        "single": 0.8,
+        "empty": 0.945
+      },
+      "seconds_per_image": 0.25573064091592096,
+      "timing_seconds": {
+        "load_models": 0.7721869160886854,
+        "detect_and_classify": 127.86532045796048,
+        "rechecked_images": 191,
+        "recheck": 52.76281745790038
+      }
+    },
+    "crop + recheck": {
+      "images": 500,
+      "truth_animals": 350,
+      "animal_outcomes": {
+        "exact": 168,
+        "coarser": 72,
+        "animal": 25,
+        "finer": 11,
+        "wrong": 39,
+        "unknown": 10,
+        "blank": 0,
+        "missed": 24,
+        "recovered": 1
+      },
+      "species_exact_rate": 0.48,
+      "correct_any_level_rate": 0.7171428571428572,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 39,
+        "unknown": 12,
+        "human": 1
+      },
+      "image_rates": {
+        "multi": 0.32,
+        "single": 0.788,
+        "empty": 0.935
+      },
+      "seconds_per_image": 0.5038168369980994,
+      "timing_seconds": {
+        "load_models": 0.6522533750394359,
+        "detect_and_classify": 196.18106645799708,
+        "rechecked_images": 191,
+        "recheck": 55.727352041052654
+      }
+    },
+    "crop no recheck": {
+      "images": 500,
+      "truth_animals": 350,
+      "animal_outcomes": {
+        "exact": 168,
+        "coarser": 72,
+        "animal": 25,
+        "finer": 11,
+        "wrong": 39,
+        "unknown": 10,
+        "blank": 0,
+        "missed": 25,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.48,
+      "correct_any_level_rate": 0.7171428571428572,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 39,
+        "unknown": 12,
+        "human": 1
+      },
+      "image_rates": {
+        "multi": 0.32,
+        "single": 0.784,
+        "empty": 0.935
+      },
+      "seconds_per_image": 0.39236213291599414,
+      "timing_seconds": {
+        "load_models": 0.6522533750394359,
+        "detect_and_classify": 196.18106645799708,
+        "rechecked_images": 191,
+        "recheck": 55.727352041052654
+      }
+    }
+  }
+}

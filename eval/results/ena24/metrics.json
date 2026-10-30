@@ -1,0 +1,138 @@
+{
+  "dataset": "ENA24",
+  "country": "USA",
+  "metrics": {
+    "upstream + recheck": {
+      "images": 231,
+      "truth_animals": 341,
+      "animal_outcomes": {
+        "exact": 253,
+        "coarser": 68,
+        "animal": 12,
+        "finer": 1,
+        "wrong": 4,
+        "unknown": 0,
+        "blank": 0,
+        "missed": 3,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.7419354838709677,
+      "correct_any_level_rate": 0.9442815249266863,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 16,
+        "unknown": 4
+      },
+      "image_rates": {
+        "multi": 0.7906976744186046,
+        "single": 0.9241379310344827
+      },
+      "seconds_per_image": 0.33233222348496594,
+      "timing_seconds": {
+        "load_models": 1.5661767920246348,
+        "detect_and_classify": 76.7686507080216,
+        "rechecked_images": 0,
+        "recheck": 9.291700553148985e-05
+      }
+    },
+    "upstream no recheck": {
+      "images": 231,
+      "truth_animals": 341,
+      "animal_outcomes": {
+        "exact": 253,
+        "coarser": 68,
+        "animal": 12,
+        "finer": 1,
+        "wrong": 4,
+        "unknown": 0,
+        "blank": 0,
+        "missed": 3,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.7419354838709677,
+      "correct_any_level_rate": 0.9442815249266863,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 16,
+        "unknown": 4
+      },
+      "image_rates": {
+        "multi": 0.7906976744186046,
+        "single": 0.9241379310344827
+      },
+      "seconds_per_image": 0.33233182124684674,
+      "timing_seconds": {
+        "load_models": 1.5661767920246348,
+        "detect_and_classify": 76.7686507080216,
+        "rechecked_images": 0,
+        "recheck": 9.291700553148985e-05
+      }
+    },
+    "crop + recheck": {
+      "images": 231,
+      "truth_animals": 341,
+      "animal_outcomes": {
+        "exact": 262,
+        "coarser": 58,
+        "animal": 12,
+        "finer": 1,
+        "wrong": 5,
+        "unknown": 0,
+        "blank": 0,
+        "missed": 3,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.7683284457478006,
+      "correct_any_level_rate": 0.9413489736070382,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 15,
+        "unknown": 5
+      },
+      "image_rates": {
+        "multi": 0.7906976744186046,
+        "single": 0.9310344827586207
+      },
+      "seconds_per_image": 0.5628808243164906,
+      "timing_seconds": {
+        "load_models": 0.6668795000296086,
+        "detect_and_classify": 130.02537570800632,
+        "rechecked_images": 0,
+        "recheck": 9.470910299569368e-05
+      }
+    },
+    "crop no recheck": {
+      "images": 231,
+      "truth_animals": 341,
+      "animal_outcomes": {
+        "exact": 262,
+        "coarser": 58,
+        "animal": 12,
+        "finer": 1,
+        "wrong": 5,
+        "unknown": 0,
+        "blank": 0,
+        "missed": 3,
+        "recovered": 0
+      },
+      "species_exact_rate": 0.7683284457478006,
+      "correct_any_level_rate": 0.9413489736070382,
+      "human_vehicle": {},
+      "extra_boxes": {
+        "animal": 15,
+        "unknown": 5
+      },
+      "image_rates": {
+        "multi": 0.7906976744186046,
+        "single": 0.9310344827586207
+      },
+      "seconds_per_image": 0.5628804143203737,
+      "timing_seconds": {
+        "load_models": 0.6668795000296086,
+        "detect_and_classify": 130.02537570800632,
+        "rechecked_images": 0,
+        "recheck": 9.470910299569368e-05
+      }
+    }
+  }
+}
