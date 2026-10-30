@@ -155,7 +155,7 @@ and white-tailed deer), it stays its own row.
 
 ### Review list
 
-`review.csv` lists the images whose labels deserve a second look, one row per image, in
+Every run writes `review.csv`: the images whose labels deserve a second look, one row per image, in
 deployment and capture-time order (with `event_id`, so a whole event can be checked at once).
 Confidence alone isn't a good filter: SpeciesNet only names a species when its score clears
 0.65–0.8, and otherwise falls back to a broader label. So a detection is flagged when:
