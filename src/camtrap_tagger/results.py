@@ -13,6 +13,7 @@ from datetime import datetime
 from importlib.metadata import version
 
 from camtrap_tagger.events import DEFAULT_GAP_MINUTES, build_events
+from camtrap_tagger.metadata import VIDEO_MEDIATYPES
 from camtrap_tagger.review import DEFAULT_REVIEW_BELOW, review_reasons, review_summary
 
 
@@ -126,6 +127,10 @@ def derive_rollup_status(clean_prediction, prediction_source, raw_common_name=No
     return "not_applicable"
 
 
+VIDEO_FIELDS = ["frame_number", "frame_time", "first_seen", "last_seen", "frames_seen",
+                "frames_sampled"]
+
+
 def detection_entry(filepath, detection_index, det):
     """Build one results entry from a SpeciesNet detection (or whole-image recheck)."""
     raw = det.get("raw_classifications") or {}
@@ -151,6 +156,11 @@ def detection_entry(filepath, detection_index, det):
         "detector_conf": None if whole_image else det.get("conf"),
         "crop_filepath": det.get("crop_filepath"),
     }
+
+    # Set on detections from a video's summary (video.py).
+    for key in [*VIDEO_FIELDS, "frames_disagree"]:
+        if key in det:
+            entry[key] = det[key]
 
     # Detections that weren't classified (e.g. humans/vehicles in the crop backend)
     # keep the detector's label.
@@ -256,13 +266,15 @@ def deployment_summary(deployments, image_info, entries):
 
 
 def build_results(predictions, metadata, threshold, image_info=None, deployments=None,
-                  warnings=None, event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW):
+                  warnings=None, event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW,
+                  videos=None):
     """Flatten SpeciesNet predictions into the results dict.
 
     image_info maps filepath → deployment_id, timestamp, timestamp_source and
     outside_deployment (from pipeline.run); those fields are added to every entry. Images
     with timestamps are grouped into events `event_gap` minutes apart. Each entry gets
-    `review_reasons` (see review.py), using `review_below` as the confidence cutoff.
+    `review_reasons` (see review.py), using `review_below` as the confidence cutoff. `videos`
+    maps each video to its frame_rate and frames_processed (see video.py).
     """
     image_info = image_info or {}
     entries = [
@@ -276,6 +288,8 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
 
     summary = {
         "total_images": len(predictions),
+        "videos": sum(1 for p in predictions if os.path.splitext(p["filepath"])[1].lower()
+                      in VIDEO_MEDIATYPES),
         "total_detections": sum(e["category"] != "error" for e in entries),
         "animals": 0,
         "blanks": 0,
@@ -316,6 +330,7 @@ def build_results(predictions, metadata, threshold, image_info=None, deployments
         "summary": summary,
         "deployments": deployment_summary(deployments or [], image_info, entries),
         "events": events,
+        "videos": videos or {},
         "warnings": warnings or [],
     }
 
@@ -330,7 +345,7 @@ CSV_COLUMNS = ["file", "deployment_id", "timestamp", "event_id", "detection_inde
                "prediction",
                "species_conf", "detector_conf", "bbox_x", "bbox_y", "bbox_width", "bbox_height",
                "prediction_raw", "rollup_status", "prediction_source", "taxonomy_5part", "note",
-               "timestamp_source", "outside_deployment", "review_reasons"]
+               "timestamp_source", "outside_deployment", "review_reasons", *VIDEO_FIELDS]
 DEPLOYMENT_COLUMNS = ["deploymentID", "folder", "latitude", "longitude", "start", "end",
                       "locationName", "images", "first_image", "last_image",
                       "images_outside_deployment", "animal_detections"]

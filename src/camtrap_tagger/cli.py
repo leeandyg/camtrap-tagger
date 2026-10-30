@@ -24,6 +24,7 @@ from camtrap_tagger.results import (
 )
 from camtrap_tagger.review import DEFAULT_REVIEW_BELOW, REASONS, write_review_csv
 from camtrap_tagger.timelapse import write_recognition_file
+from camtrap_tagger.video import DEFAULT_VIDEO_FPS
 from camtrap_tagger.visualize import visualize_results
 
 SPECIES_SHOWN = 15
@@ -33,9 +34,9 @@ DEPLOYMENTS_SHOWN = 15
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="camtrap-tagger",
-        description="Tag every animal in a folder of camera-trap images with SpeciesNet.",
+        description="Tag every animal in a folder of camera-trap images and videos with SpeciesNet.",
     )
-    parser.add_argument("folder", help="folder of images (searched recursively)")
+    parser.add_argument("folder", help="folder of images and videos (searched recursively)")
     parser.add_argument("--out", help="output folder (default: <folder>_tagged next to the input)")
     parser.add_argument("--country", help="ISO 3166-1 alpha-3 country code for geofencing, e.g. USA")
     parser.add_argument("--admin1-region", help="US state code for geofencing, e.g. CA (needs --country USA)")
@@ -60,6 +61,9 @@ def parse_args(argv=None):
     parser.add_argument("--review-below", type=float, default=DEFAULT_REVIEW_BELOW, metavar="CONF",
                         help="flag labels below this confidence in review.csv, along with "
                              f"unknowns and labels above species level (default: {DEFAULT_REVIEW_BELOW})")
+    parser.add_argument("--video-fps", type=float, default=DEFAULT_VIDEO_FPS, metavar="FPS",
+                        help="frames per second to sample from videos "
+                             f"(default: {DEFAULT_VIDEO_FPS:g})")
     parser.add_argument("--timelapse", action="store_true",
                         help="also write timelapse_recognition.json (MegaDetector format) for review "
                              "in Timelapse; open the input folder as the Timelapse image set")
@@ -92,6 +96,8 @@ def parse_args(argv=None):
         parser.error("--threshold must be between 0 and 1")
     if not 0 <= args.review_below <= 1:
         parser.error("--review-below must be between 0 and 1")
+    if args.video_fps <= 0:
+        parser.error("--video-fps must be more than 0")
     if args.event_gap <= 0:
         parser.error("--event-gap must be more than 0 minutes")
     if args.camtrap_dp:
@@ -142,6 +148,7 @@ def main(argv=None):
         file_time_fallback=args.file_times,
         event_gap=args.event_gap,
         review_below=args.review_below,
+        video_fps=args.video_fps,
     )
 
     write_json(results, os.path.join(out, "results.json"))
@@ -183,12 +190,13 @@ def print_summary(results, out, review_counts, visualized):
     print("\n" + "=" * 50)
     print("PROCESSING COMPLETE!")
     print("=" * 50)
-    print(f"Total images processed: {summary['total_images']}")
+    videos = f" ({summary['videos']} videos)" if summary["videos"] else ""
+    print(f"Total images processed: {summary['total_images']}{videos}")
     print(f"Total detections:       {summary['total_detections']}")
     for key in ("animals", "humans", "vehicles", "blanks", "unknowns"):
         print(f"  - {key.capitalize() + ':':20}{summary[key]}")
     if summary["errors"]:
-        print(f"  - Errors:             {summary['errors']} (unreadable images)")
+        print(f"  - Errors:             {summary['errors']} (unreadable files)")
     if summary["detector_missed"]:
         print(f"  - Detector missed:    {summary['detector_missed']} (found by whole-image recheck)")
 
@@ -224,11 +232,11 @@ def print_summary(results, out, review_counts, visualized):
 
     notes = list(results["warnings"])
     if summary["images_without_time"]:
-        notes.append(f"{summary['images_without_time']} image(s) have no EXIF capture time; their "
+        notes.append(f"{summary['images_without_time']} file(s) have no capture time in their metadata; their "
                      "timestamp is left empty and they aren't grouped into events "
                      "(--file-times uses file modified times instead)")
     if summary["images_with_file_time"]:
-        notes.append(f"{summary['images_with_file_time']} image(s) had no EXIF capture time; "
+        notes.append(f"{summary['images_with_file_time']} file(s) had no capture time in their metadata; "
                      "used the file's modified time instead")
     if summary["images_outside_deployment"]:
         notes.append(f"{summary['images_outside_deployment']} image(s) were taken outside their "

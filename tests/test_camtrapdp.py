@@ -129,7 +129,7 @@ def test_descriptor_valid_against_camtrap_dp_profile(package):
 def test_left_out_data_is_reported(package):
     out, warnings = package
     assert any("camC" in w for w in warnings)
-    assert any("1 image(s) without a capture time" in w for w in warnings)
+    assert any("1 file(s) without a capture time" in w for w in warnings)
     assert [d["deploymentID"] for d in read(out / "deployments.csv")] == ["camA", "camB"]
     assert len(read(out / "media.csv")) == 4
 

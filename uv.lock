@@ -101,6 +101,7 @@ name = "camtrap-tagger"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "opencv-python" },
     { name = "pillow" },
     { name = "speciesnet" },
     { name = "tqdm" },
@@ -114,6 +115,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "opencv-python", specifier = ">=4.11" },
     { name = "pillow" },
     { name = "speciesnet", specifier = "==5.0.6" },
     { name = "tqdm" },

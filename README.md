@@ -29,7 +29,8 @@ classifier).
 5. **Lists what needs checking** in `review.csv` and sorts blank and unknown images into
    review folders.
 6. **Writes one flat results file** with one entry per detection.
-7. **Optionally rechecks empty frames** (`--recheck`) with SpeciesNet's whole-image classifier,
+7. **Handles video** by sampling frames and summarizing each video as one item.
+8. **Optionally rechecks empty frames** (`--recheck`) with SpeciesNet's whole-image classifier,
    reporting only confident results. In testing this rarely found a missed animal; see
    [evaluation](#evaluation).
 
@@ -84,11 +85,12 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--backend {upstream,crop}` | `upstream` | How animals are classified (see below) |
 | `--threshold N` | `0.1` | Minimum detector confidence for a detection to count |
 | `--model NAME` | SpeciesNet v4.0.3a | Crop classifier model |
-| `--recheck` | off | Rerun frames with no detections through the whole-image model |
+| `--recheck` | off | Rerun images with no detections through the whole-image model (not videos) |
 | `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
 | `--file-times` | off | Use file modified times for images without an EXIF capture time |
 | `--event-gap MINUTES` | `30` | Images from one deployment this close together form one event |
 | `--review-below CONF` | `0.8` | Flag labels below this confidence in `review.csv` (see below) |
+| `--video-fps FPS` | `1` | Frames per second to sample from videos |
 | `--timelapse` | off | Also write a recognition file for review in [Timelapse](https://timelapse.ucalgary.ca) |
 | `--camtrap-dp` | off | Also write a [Camtrap DP](https://camtrap-dp.tdwg.org) data package (see below) |
 | `--timezone TZ` | none | Time zone of the camera clocks, e.g. `America/Los_Angeles` or `-07:00` |
@@ -97,7 +99,8 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--sampling-design` | `opportunistic` | Camtrap DP sampling design (e.g. `targeted`, `systematicRandom`) |
 | `--no-viz` | | Don't draw boxes |
 
-Images are found recursively (jpg, png, tif, webp). Output mirrors the input's subfolders:
+Images (jpg, png, tif, webp) and videos (mp4, m4v, mov, avi, mkv, wmv, webm) are found
+recursively. Output mirrors the input's subfolders:
 
 ```
 <folder>_tagged/
@@ -118,7 +121,8 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
 
 ### Capture times and deployments
 
-Each image's capture time is read from its EXIF data. Images without one get an empty
+Each image's capture time is read from its EXIF data, and each MP4 or MOV video's from its file
+header (see [Video](#video)). Files without one get an empty
 timestamp. `--file-times` falls back to the file's modified time instead, which is only right
 if the files were copied off the card with their dates kept; a downloaded file's modified
 time is the download time.
@@ -153,6 +157,35 @@ in one frame and "cervidae family" or "unknown" in the next, a broader label is 
 more specific one in the same event when there is only one candidate; with two (say, mule deer
 and white-tailed deer), it stays its own row.
 
+### Video
+
+A deer on screen for 30 seconds is one animal, not 30 detections, and you review the video, not
+its frames. So each video is sampled (`--video-fps`, default 1 frame per second), the frames run
+through the same detector and classifier, and the video becomes **one item in the results**, like
+one image. Species counts, events, the review list and both exports count it once.
+
+- Each label keeps the detections from the frame showing the most of it, so the count is the most
+  seen at once. Those rows add `frame_number` and `frame_time` (the frame the box is on),
+  `first_seen` and `last_seen` (seconds), and `frames_seen` out of `frames_sampled`.
+- A broader label folds into a single more specific one, as in events. Species aren't voted on:
+  frames that give two species keep both, flagged `frames_disagree` in `review.csv`. That is
+  usually one animal misread from a poor angle, so check those before counting them.
+- `visualizations/` gets a JPEG per frame used, e.g. `clip.mp4_frame000120.jpg`. Blank or unknown
+  videos are copied whole to the review folders. Every frame's raw output is in
+  `speciesnet_predictions.json`.
+- Camtrap DP observations give the times on screen and no box, since a box belongs to one frame.
+  In Timelapse's format, each box records its frame number.
+
+Capture time comes from the header of MP4 and MOV files. The format specifies UTC, but trail
+cameras have no time zone and usually write their local clock, so it's used as written (files
+from phones or re-encoded by software may be hours off). AVI and other formats have no standard
+field: use `--file-times`, or their timestamp stays empty and they're left out of events and
+Camtrap DP. Burned-in time overlays aren't read.
+
+Tested on a handful of real camera-trap clips, not evaluated at scale. Video adds chances for a
+false detection and, on dark, distant footage, may still miss animals: a night clip of boars
+behind reeds got one weak box in 10 frames.
+
 ### Review list
 
 Every run writes `review.csv`: the images whose labels deserve a second look, one row per image, in
@@ -164,6 +197,7 @@ Confidence alone isn't a good filter: SpeciesNet only names a species when its s
 |---|---|
 | `unknown` | no label at all |
 | `detector_disagrees` | SpeciesNet overruled the detector, e.g. an "animal" box labelled human |
+| `frames_disagree` | frames of a video gave different animal labels |
 | `recheck_only` | found only by the whole-image recheck, without a detector box |
 | `outside_range` | the top species isn't expected at `--country`/`--admin1-region`, so the label was broadened (a model error, or a range record worth confirming) |
 | `not_species_level` | labelled above species: genus, family, ... or just "animal" |
@@ -328,12 +362,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~110 tests, a few seconds, no models needed
+uv run pytest        # ~130 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
 `backends.py`, `metadata.py` (capture times and deployments), `events.py`, `camtrapdp.py`,
-`timelapse.py`, `review.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
+`timelapse.py`, `review.py`, `video.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 

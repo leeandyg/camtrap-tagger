@@ -6,6 +6,7 @@ from functools import cache
 from PIL import Image, ImageDraw, ImageFont
 
 from camtrap_tagger.results import mirrored_path
+from camtrap_tagger.video import read_frame
 
 # Color scheme for different detection categories (RGB)
 COLORS = {
@@ -242,9 +243,9 @@ def sort_detections_for_drawing(detections):
     return sorted(detections, key=sort_key)
 
 
-def draw_image(filepath, detections):
-    """Return a copy of the image at filepath with all detections drawn on it."""
-    img = Image.open(filepath)
+def draw_image(filepath, detections, frame_number=None):
+    """Return a copy of the image at filepath, or of one video frame, with detections drawn on it."""
+    img = Image.open(filepath) if frame_number is None else read_frame(filepath, frame_number)
     # Convert to RGB if necessary (for PNG with alpha, etc.)
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -277,19 +278,24 @@ def draw_image(filepath, detections):
 
 
 def visualize_results(results, source_root, visualizations_dir):
-    """Draw all non-blank detections and save them, mirroring the source folder layout."""
+    """Draw all non-blank detections and save them, mirroring the source folder layout.
+
+    A video gets one JPEG per frame its detections came from: clip.mp4_frame000360.jpg.
+    """
     by_image = {}
     for pred in results["predictions"]:
         # Blanks go to the review folder instead
         if pred["category"] in ("blank", "error"):
             continue
-        by_image.setdefault(pred["filepath"], []).append(pred)
+        by_image.setdefault((pred["filepath"], pred.get("frame_number")), []).append(pred)
 
     visualized_count = 0
-    for filepath, detections in by_image.items():
+    for (filepath, frame_number), detections in by_image.items():
         try:
-            img = draw_image(filepath, detections)
+            img = draw_image(filepath, detections, frame_number)
             output_path = mirrored_path(filepath, source_root, visualizations_dir)
+            if frame_number is not None:
+                output_path += f"_frame{frame_number:06d}.jpg"
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             img.save(output_path, quality=95)
             visualized_count += 1

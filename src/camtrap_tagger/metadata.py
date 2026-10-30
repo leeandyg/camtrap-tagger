@@ -1,7 +1,8 @@
 """Capture times and deployments (one camera at one place for one period).
 
-Timestamps come from EXIF (DateTimeOriginal, else DateTime), optionally falling back to the
-file's modification time. They are local camera time without a time zone, as cameras record them.
+Timestamps come from EXIF (DateTimeOriginal, else DateTime) or, for MP4 and MOV videos, the
+file's creation time, optionally falling back to the file's modification time. They are local
+camera time without a time zone, as cameras record them.
 
 By default each folder of images is its own deployment. A deployment sheet (CSV) can map
 folders to deployment IDs and add coordinates and start/end times:
@@ -14,13 +15,19 @@ import csv
 import difflib
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PIL import Image
 
 EXIF_IFD = 0x8769
 DATETIME_ORIGINAL = 36867
 DATETIME = 306
+
+VIDEO_MEDIATYPES = {".mp4": "video/mp4", ".m4v": "video/x-m4v", ".mov": "video/quicktime",
+                    ".avi": "video/x-msvideo", ".mkv": "video/x-matroska",
+                    ".wmv": "video/x-ms-wmv", ".webm": "video/webm"}
+QUICKTIME_EXTENSIONS = {".mp4", ".m4v", ".mov"}
+QUICKTIME_EPOCH = datetime(1904, 1, 1)
 
 REQUIRED_COLUMNS = ["deploymentID", "folder"]
 OPTIONAL_COLUMNS = ["latitude", "longitude", "start", "end", "locationName"]
@@ -51,13 +58,57 @@ class DeploymentSheetError(ValueError):
         super().__init__("\n".join(problems))
 
 
-def read_timestamp(path, file_time_fallback=False):
-    """(ISO 8601 local time, source) for an image, or (None, None) if unknown.
+def _quicktime_atoms(f, end):
+    """Yield (type, start of body, end of body) for the atoms from f's position up to end."""
+    position = f.tell()
+    while position + 8 <= end:
+        f.seek(position)
+        size, kind = int.from_bytes(f.read(4), "big"), f.read(4)
+        body = position + 8
+        if size == 1:
+            size = int.from_bytes(f.read(8), "big")
+            body += 8
+        elif size == 0:
+            size = end - position
+        if size < body - position:
+            return
+        yield kind, body, position + size
+        position += size
 
-    Source is "exif", or "file_modified" when file_time_fallback is set. A file's modified
-    time is only the capture time if the file was copied off the card with dates preserved;
-    downloaded or re-saved files get the download time, so it is off by default.
+
+def read_video_creation_time(path):
+    """The creation time in an MP4 or MOV file's header, as naive ISO time, or None.
+
+    The format says UTC, but trail cameras have no time zone and write their local clock, so
+    it is taken as-is (as ExifTool does by default). Unset or implausible dates give None.
     """
+    try:
+        with open(path, "rb") as f:
+            for kind, body, end in _quicktime_atoms(f, os.fstat(f.fileno()).st_size):
+                if kind != b"moov":
+                    continue
+                f.seek(body)
+                for inner, inner_body, _ in _quicktime_atoms(f, end):
+                    if inner == b"mvhd":
+                        f.seek(inner_body)
+                        width = 8 if f.read(4)[0] == 1 else 4  # version byte, then 3 of flags
+                        created = QUICKTIME_EPOCH + timedelta(seconds=int.from_bytes(f.read(width), "big"))
+                        return created.isoformat() if created.year >= 2000 else None
+    except (OSError, IndexError, OverflowError):
+        pass
+    return None
+
+
+def read_timestamp(path, file_time_fallback=False):
+    """(ISO 8601 local time, source) for an image or video, or (None, None) if unknown.
+
+    Source is "exif", "video_metadata", or "file_modified" when file_time_fallback is set. A
+    file's modified time is only the capture time if the file was copied off the card with
+    dates preserved; downloaded or re-saved files get the download time, so it is off by default.
+    """
+    extension = os.path.splitext(path)[1].lower()
+    if extension in QUICKTIME_EXTENSIONS and (created := read_video_creation_time(path)):
+        return created, "video_metadata"
     try:
         with Image.open(path) as img:
             exif = img.getexif()

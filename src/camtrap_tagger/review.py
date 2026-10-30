@@ -14,6 +14,7 @@ DEFAULT_REVIEW_BELOW = 0.8
 REASONS = {
     "unknown": "no label at all",
     "detector_disagrees": "classifier overruled the detector (e.g. an animal box labelled human)",
+    "frames_disagree": "frames of this video gave different animal labels",
     "recheck_only": "found only by the whole-image recheck, with no detector box",
     "outside_range": "top species isn't expected at this location, so the label was broadened",
     "not_species_level": "labelled above species (genus, family, ... or just 'animal')",
@@ -41,6 +42,8 @@ def review_reasons(entry, below=DEFAULT_REVIEW_BELOW):
     detector = entry.get("detector_label")
     if detector and category in ("animal", "human", "vehicle") and category != detector:
         reasons.append("detector_disagrees")
+    if entry.get("frames_disagree"):
+        reasons.append("frames_disagree")
     if entry.get("note") == "detector_missed":
         reasons.append("recheck_only")
     if category == "animal" and not is_species_level(entry):
@@ -88,6 +91,8 @@ def review_rows(results, source_root):
                 continue
             index = "recheck" if e["detection_index"] is None else e["detection_index"]
             text = f"{index}: {e['prediction']}"
+            if e.get("frame_time") is not None:
+                text += f" at {e['frame_time']:g}s"
             if e.get("species_conf") is not None:
                 text += f" {e['species_conf']:.2f}"
             if e.get("prediction_raw") and e["prediction_raw"] != e["prediction"]:

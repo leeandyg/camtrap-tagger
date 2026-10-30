@@ -45,6 +45,23 @@ def fold_labels(ranks_by_label):
     return folded
 
 
+def folded_label_fn(entries):
+    """A function giving the label an entry counts as among `entries`.
+
+    Animals and unknowns use their folded label; humans and vehicles count by category.
+    """
+    ranks = {e["prediction"]: label_ranks(e) for e in entries
+             if e["category"] in ("animal", "unknown")}
+    folded = fold_labels(ranks)
+
+    def label(e):
+        if e["category"] in ("animal", "unknown"):
+            return folded.get(e["prediction"], e["prediction"])
+        return e["category"]
+
+    return label
+
+
 def build_events(entries, gap_minutes=DEFAULT_GAP_MINUTES):
     """Group entries into events.
 
@@ -90,14 +107,7 @@ def build_events(entries, gap_minutes=DEFAULT_GAP_MINUTES):
 
 def event_observations(images):
     """One observation per (folded) label: max count in a single image, best confidence."""
-    ranks = {e["prediction"]: label_ranks(e) for found in images for e in found
-             if e["category"] in ("animal", "unknown")}
-    folded = fold_labels(ranks)
-
-    def label(e):
-        if e["category"] in ("animal", "unknown"):
-            return folded.get(e["prediction"], e["prediction"])
-        return e["category"]
+    label = folded_label_fn([e for found in images for e in found])
 
     counts, confidence, category = Counter(), {}, {}
     for found in images:

@@ -6,12 +6,15 @@ filter on and correct. Spec: https://lila.science/megadetector-output-format (ve
 
 Each box keeps the detector's own category (animal / person / vehicle) and confidence; the
 final label goes in its "classifications". Paths are relative to the input folder, so open
-that folder as the Timelapse image set before importing.
+that folder as the Timelapse image set before importing. A video has one entry with its frame
+rate and sampled frames, and each box records the frame it was drawn on.
 """
 
 import json
 import os
 from datetime import datetime
+
+from camtrap_tagger.metadata import VIDEO_MEDIATYPES
 
 FORMAT_VERSION = "1.6"
 DETECTOR_CATEGORIES = {"animal": "1", "human": "2", "vehicle": "3"}
@@ -42,6 +45,11 @@ def build_recognition_file(results, source_root):
     images = []
     for path, entries in by_image.items():
         image = {"file": os.path.relpath(path, source_root).replace(os.sep, "/")}
+        if os.path.splitext(path)[1].lower() in VIDEO_MEDIATYPES:
+            # Required on every video, including ones that couldn't be read.
+            video = results.get("videos", {}).get(path, {})
+            image.update(frame_rate=video.get("frame_rate", 0),
+                         frames_processed=video.get("frames_processed", []))
         if entries[0]["category"] == "error":
             image.update(failure="Failure image access", detections=None)
             images.append(image)
@@ -59,6 +67,8 @@ def build_recognition_file(results, source_root):
                 # Whole-image recheck result: no box, so mark the whole frame.
                 detection = {"category": "1", "conf": round(e.get("species_conf") or 0.0, 4),
                              "bbox": [0.0, 0.0, 1.0, 1.0]}
+            if e.get("frame_number") is not None:
+                detection["frame_number"] = e["frame_number"]
             # The final label, including where SpeciesNet overruled the detector (e.g. a
             # "vehicle" box classified as a person). Unclassified boxes have no species_conf.
             if e.get("species_conf") is not None:

@@ -5,8 +5,9 @@ GBIF and by R/Python tools such as camtrapdp, camtrapR and frictionless. A packa
 with datapackage.json and three tables:
 
 - deployments.csv: one row per camera deployment (needs coordinates and start/end)
-- media.csv: one row per image with a capture time
-- observations.csv: one row per detection (observationLevel "media", with its bounding box)
+- media.csv: one row per image or video with a capture time
+- observations.csv: one row per detection (observationLevel "media", with its bounding box;
+  for a video, the times the label was on screen and no box, since a box belongs to one frame)
   and one row per species per event (observationLevel "event", with its count)
 
 All observations are machine classifications. Camera times have no time zone, so the caller
@@ -25,6 +26,7 @@ from importlib.metadata import version
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from camtrap_tagger.events import label_ranks
+from camtrap_tagger.metadata import VIDEO_MEDIATYPES
 
 CAMTRAP_DP_VERSION = "1.0.2"
 SCHEMA_BASE = f"https://raw.githubusercontent.com/tdwg/camtrap-dp/{CAMTRAP_DP_VERSION}"
@@ -154,10 +156,11 @@ def write_camtrap_dp(results, out_dir, source_root, tz, project_title, contribut
             "filePath": relpath,
             "filePublic": False,
             "fileName": os.path.basename(path),
-            "fileMediatype": mimetypes.guess_type(path)[0] or "image/jpeg",
+            "fileMediatype": (VIDEO_MEDIATYPES.get(os.path.splitext(path)[1].lower())
+                              or mimetypes.guess_type(path)[0] or "image/jpeg"),
         }
     if untimed:
-        warnings.append(f"Left out {untimed} image(s) without a capture time (Camtrap DP requires one)")
+        warnings.append(f"Left out {untimed} file(s) without a capture time (Camtrap DP requires one)")
 
     # Observations: per detection (media level), then per species per event (event level).
     observations, ranks_by_label = [], {}
@@ -177,12 +180,18 @@ def write_camtrap_dp(results, out_dir, source_root, tz, project_title, contribut
             ranks = label_ranks(e)
             ranks_by_label.setdefault(e["prediction"], ranks)
             name = scientific_name(ranks)[0] if e["category"] == "animal" else None
-            bbox = e.get("bbox") or [None] * 4
+            is_video_detection = e.get("first_seen") is not None
+            bbox = (None if is_video_detection else e.get("bbox")) or [None] * 4
+            start, end = m["timestamp"], m["timestamp"]
+            if is_video_detection:
+                taken = datetime.fromisoformat(m["timestamp"])
+                start = (taken + timedelta(seconds=e["first_seen"])).isoformat(timespec="seconds")
+                end = (taken + timedelta(seconds=e["last_seen"])).isoformat(timespec="seconds")
             probability = e.get("species_conf") if e.get("species_conf") is not None else e.get("detector_conf")
             observations.append({
                 "observationID": f"{m['mediaID']}_{n}", "deploymentID": m["deploymentID"],
                 "mediaID": m["mediaID"], "eventID": e.get("event_id"),
-                "eventStart": m["timestamp"], "eventEnd": m["timestamp"],
+                "eventStart": start, "eventEnd": end,
                 "observationLevel": "media", "observationType": e["category"],
                 "scientificName": name, "count": 1,
                 "bboxX": bbox[0], "bboxY": bbox[1], "bboxWidth": bbox[2], "bboxHeight": bbox[3],

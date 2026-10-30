@@ -1,4 +1,4 @@
-"""detect → classify → per-animal decisions → whole-image blank recheck → merge."""
+"""detect → classify → per-animal decisions → whole-image blank recheck → video summaries → merge."""
 
 import os
 import time
@@ -12,9 +12,10 @@ from tqdm import tqdm
 
 from camtrap_tagger.backends import CropBackend, UpstreamBackend
 from camtrap_tagger.events import DEFAULT_GAP_MINUTES
-from camtrap_tagger.metadata import assign_deployments, read_timestamp
+from camtrap_tagger.metadata import VIDEO_MEDIATYPES, assign_deployments, read_timestamp
 from camtrap_tagger.results import build_results, parse_ensemble_prediction
 from camtrap_tagger.review import DEFAULT_REVIEW_BELOW
+from camtrap_tagger.video import DEFAULT_VIDEO_FPS, tag_videos
 
 WHOLE_IMAGE_MODEL = "kaggle:google/speciesnet/pyTorch/v4.0.3b/1"
 DEFAULT_THRESHOLD = 0.1
@@ -25,7 +26,15 @@ RECHECK_MIN_SCORE = 0.8
 
 def list_images(folder):
     """All images under folder (recursive), sorted."""
-    extensions = {f".{ext.lower()}" for ext in IMG_EXTENSIONS}
+    return _list_files(folder, {f".{ext.lower()}" for ext in IMG_EXTENSIONS})
+
+
+def list_videos(folder):
+    """All videos under folder (recursive), sorted."""
+    return _list_files(folder, VIDEO_MEDIATYPES)
+
+
+def _list_files(folder, extensions):
     found = []
     for root, _, files in os.walk(folder):
         for name in files:
@@ -84,25 +93,28 @@ def recheck_blanks(predictions, ensemble, model_name, country=None, admin1_regio
 def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WHOLE_IMAGE_MODEL,
         country=None, admin1_region=None, threshold=DEFAULT_THRESHOLD, recheck=False,
         crops_dir=None, deployments=None, file_time_fallback=False,
-        event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW):
-    """Tag every image under `source`.
+        event_gap=DEFAULT_GAP_MINUTES, review_below=DEFAULT_REVIEW_BELOW,
+        video_fps=DEFAULT_VIDEO_FPS):
+    """Tag every image and video under `source`.
 
     `deployments` is an optional list from metadata.load_deployment_sheet; without it each
     folder is its own deployment. `file_time_fallback` uses file modified times for images
     without an EXIF capture time. `event_gap` is the minutes between images that starts a new
-    event. Labels below `review_below` confidence are flagged for review.
+    event. Labels below `review_below` confidence are flagged for review. Videos are sampled
+    at `video_fps` frames per second and summarized as one item each; the recheck skips them.
 
     Returns (results, predictions): the flat per-detection results dict, and the raw
-    SpeciesNet predictions it was built from.
+    SpeciesNet predictions it was built from (per frame for videos).
     """
     filepaths = list_images(source)
-    if not filepaths:
-        raise ValueError(f"No images found in {source}")
+    videos = list_videos(source)
+    if not filepaths and not videos:
+        raise ValueError(f"No images or videos found in {source}")
 
-    assigned, all_deployments, warnings = assign_deployments(filepaths, source, deployments)
+    assigned, all_deployments, warnings = assign_deployments(filepaths + videos, source, deployments)
     by_id = {d.deployment_id: d for d in all_deployments}
     image_info = {}
-    for path in filepaths:
+    for path in filepaths + videos:
         timestamp, timestamp_source = read_timestamp(path, file_time_fallback)
         image_info[path] = {
             "deployment_id": assigned[path],
@@ -122,7 +134,7 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
     timing["load_models"] = time.perf_counter() - start
 
     start = time.perf_counter()
-    predictions = tagger.predict(filepaths, country, admin1_region, threshold)
+    predictions = tagger.predict(filepaths, country, admin1_region, threshold) if filepaths else []
     timing["detect_and_classify"] = time.perf_counter() - start
 
     if recheck:
@@ -130,6 +142,12 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
         timing["rechecked_images"] = recheck_blanks(
             predictions, tagger.ensemble, whole_image_model, country, admin1_region, threshold)
         timing["recheck"] = time.perf_counter() - start
+
+    start = time.perf_counter()
+    summaries, frame_predictions, video_info = tag_videos(
+        videos, tagger, source, video_fps, country, admin1_region, threshold)
+    if videos:
+        timing["videos"] = time.perf_counter() - start
 
     metadata = {
         "source_folder": os.path.abspath(source),
@@ -143,6 +161,7 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
     }
     metadata["event_gap_minutes"] = event_gap
     metadata["review_below"] = review_below
-    results = build_results(predictions, metadata, threshold, image_info, all_deployments, warnings,
-                            event_gap, review_below)
-    return results, predictions
+    metadata["video_fps"] = video_fps if videos else None
+    results = build_results(predictions + summaries, metadata, threshold, image_info, all_deployments,
+                            warnings, event_gap, review_below, video_info)
+    return results, predictions + frame_predictions
