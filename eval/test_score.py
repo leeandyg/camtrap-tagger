@@ -1,4 +1,4 @@
-from score import grade, is_ancestor, iou, match, score_image
+from score import grade, is_ancestor, iou, match, score_image, score_image_level
 
 COTTONTAIL = "667a4650-a141-4c4e-844e-58cdeaeb4ae1"
 CROW = "87fdd451-ca1e-47b1-af43-aa4517cd13bf"
@@ -70,6 +70,23 @@ def test_score_image_recheck_recovers_one_animal():
     truth = {"objects": [{"bbox": [0.1, 0.1, 0.2, 0.2], "wi_guid": CROW, "category": "animal"}]}
     entries = [entry(CROW_LABEL, bbox=None, note="detector_missed")]
     assert score_image(truth, entries, TAXONOMY)["animals"] == {"recovered": 1}
+
+
+def test_score_image_level_takes_best_label_and_counts_extras():
+    truth = {"objects": [{"bbox": None, "wi_guid": COTTONTAIL, "category": "animal"}]}
+    entries = [entry(LEPORIDAE_LABEL), entry(COTTONTAIL_LABEL), entry(CROW_LABEL)]
+    s = score_image_level(truth, entries, TAXONOMY)
+    assert s["animals"] == {"exact": 1}
+    assert s["extra"] == {"animal": 2}
+    assert s["all_animals_correct"]
+
+
+def test_score_image_level_recheck_and_missed():
+    truth = {"objects": [{"bbox": None, "wi_guid": CROW, "category": "animal"}]}
+    recheck = [entry(CROW_LABEL, bbox=None, note="detector_missed")]
+    assert score_image_level(truth, recheck, TAXONOMY)["animals"] == {"recovered": 1}
+    blank = [entry(None, category="blank", bbox=None)]
+    assert score_image_level(truth, blank, TAXONOMY)["animals"] == {"missed": 1}
 
 
 def test_score_image_empty():

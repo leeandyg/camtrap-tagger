@@ -135,8 +135,47 @@ def score_image(truth, entries, taxonomy):
     }
 
 
+GRADE_ORDER = ["exact", "coarser", "finer", "animal", "unknown", "wrong"]
+
+
+def score_image_level(truth, entries, taxonomy):
+    """Like score_image, for datasets labeled per image (no boxes).
+
+    Each labeled taxon takes the best grade among the image's predicted labels; predicted
+    animals that match no labeled taxon count as extra.
+    """
+    preds = [e for e in entries if e["category"] not in ("blank", "error")]
+    animals, used = Counter(), set()
+    for obj in truth["objects"]:
+        if obj["category"] != "animal":
+            continue
+        graded = [(GRADE_ORDER.index(grade(e, obj["wi_guid"], taxonomy)), i) for i, e in enumerate(preds)]
+        if not graded:
+            animals["missed"] += 1
+            continue
+        rank, i = min(graded)
+        outcome = GRADE_ORDER[rank]
+        if outcome != "wrong":
+            used.add(i)
+        if preds[i].get("note") == "detector_missed" and outcome in ("exact", "coarser", "finer", "animal"):
+            outcome = "recovered"
+        animals[outcome] += 1
+
+    extra = Counter(e["category"] for i, e in enumerate(preds) if i not in used)
+    n_truth = sum(o["category"] == "animal" for o in truth["objects"])
+    good = sum(animals[k] for k in ("exact", "coarser", "finer", "recovered"))
+    return {
+        "animals": animals,
+        "others": Counter(),
+        "extra": extra,
+        "empty_correct": (not truth["objects"]) and all(e["category"] == "blank" for e in entries),
+        "all_animals_correct": n_truth > 0 and good == n_truth,
+    }
+
+
 def score(ground_truth, results, taxonomy):
     """Aggregate metrics for one results dict against ground_truth.json contents."""
+    score_one = score_image_level if ground_truth.get("image_level") else score_image
     by_file = {}
     for e in results["predictions"]:
         by_file.setdefault(e["filepath"], []).append(e)
@@ -146,7 +185,7 @@ def score(ground_truth, results, taxonomy):
     stratum_hits = Counter()
     for truth in ground_truth["images"]:
         entries = next((v for k, v in by_file.items() if k.endswith("/" + truth["file"])), [])
-        s = score_image(truth, entries, taxonomy)
+        s = score_one(truth, entries, taxonomy)
         animals.update(s["animals"])
         others.update(s["others"])
         extra.update(s["extra"])
