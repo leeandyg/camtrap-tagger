@@ -1,0 +1,22 @@
+[project]
+name = "camtrap-tagger"
+version = "0.1.0"
+description = "Per-animal camera-trap image tagging on top of Google's SpeciesNet"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+authors = [{ name = "Andy Lee" }]
+dependencies = [
+    "speciesnet==5.0.6",
+    "pillow",
+]
+
+[project.scripts]
+camtrap-tagger = "camtrap_tagger.cli:main"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
