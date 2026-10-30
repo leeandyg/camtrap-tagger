@@ -87,6 +87,11 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
 | `--file-times` | off | Use file modified times for images without an EXIF capture time |
 | `--event-gap MINUTES` | `30` | Images from one deployment this close together form one event |
+| `--camtrap-dp` | off | Also write a [Camtrap DP](https://camtrap-dp.tdwg.org) data package (see below) |
+| `--timezone TZ` | none | Time zone of the camera clocks, e.g. `America/Los_Angeles` or `-07:00` |
+| `--project-title TEXT` | folder name | Camtrap DP project title |
+| `--contributor "NAME <EMAIL>"` | none | Camtrap DP contact; repeat for several |
+| `--sampling-design` | `opportunistic` | Camtrap DP sampling design (e.g. `targeted`, `systematicRandom`) |
 | `--no-viz` | | Don't draw boxes |
 
 Images are found recursively (jpg, png, tif, webp). Output mirrors the input's subfolders:
@@ -98,6 +103,7 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
   species_counts.csv           animal detections, images and events per species
   deployments.csv              per deployment: coordinates, dates, image and detection counts
   events.csv                   independent events: one row per species per event, with counts
+  camtrap-dp/                  Camtrap DP package (with --camtrap-dp)
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
   visualizations/              images with boxes and labels
   review/blank/                images with nothing found
@@ -141,6 +147,34 @@ not the sum over the burst. Because SpeciesNet may label the same animal "white-
 in one frame and "cervidae family" or "unknown" in the next, a broader label is merged into a
 more specific one in the same event when there is only one candidate; with two (say, mule deer
 and white-tailed deer), it stays its own row.
+
+### Camtrap DP export
+
+[Camtrap DP](https://camtrap-dp.tdwg.org) is the TDWG standard for camera-trap data. GBIF
+accepts it, and R and Python tools such as [camtrapdp](https://inbo.github.io/camtrapdp/),
+camtrapR and frictionless read it. `--camtrap-dp` writes a version 1.0.2 package to
+`<out>/camtrap-dp/`:
+
+- `deployments.csv`: deployments from the sheet, with coordinates and start/end
+- `media.csv`: every image with a capture time; `filePath` is relative to the input folder
+- `observations.csv`: one row per detection (`observationLevel` "media", with its bounding box)
+  and one row per species per event (`observationLevel` "event", with its count), all marked as
+  machine classifications with SpeciesNet's confidence
+- `datapackage.json`: project, contributors, and spatial, temporal and taxonomic coverage
+
+```bash
+uv run camtrap-tagger photos/ --deployments sheet.csv --camtrap-dp \
+    --timezone America/Los_Angeles --project-title "Ridge survey 2024" \
+    --contributor "Ann Lee <ann@example.org>" --sampling-design systematicRandom
+```
+
+The standard requires coordinates and start/end for every deployment and a time zone for every
+timestamp, so `--camtrap-dp` needs a complete deployment sheet and `--timezone`, and checks them
+before any model runs. Images without a capture time and folders missing from the sheet are left
+out of the package, with a warning. Packages are tested against the official 1.0.2 schemas with
+frictionless.
+
+The classifications are the AI's, not human-verified: review them before publishing to GBIF.
 
 ### Backends
 
@@ -240,12 +274,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~80 tests, a few seconds, no models needed
+uv run pytest        # ~95 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
-`backends.py`, `metadata.py` (capture times and deployments), `events.py`, `results.py`,
-`visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
+`backends.py`, `metadata.py` (capture times and deployments), `events.py`, `camtrapdp.py`,
+`results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 

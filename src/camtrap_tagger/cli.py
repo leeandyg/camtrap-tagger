@@ -7,6 +7,12 @@ import re
 from speciesnet.geolocation import US_ADMIN1_REGION_TO_ABBREVIATION
 
 from camtrap_tagger import pipeline
+from camtrap_tagger.camtrapdp import (
+    SAMPLING_DESIGNS,
+    parse_contributor,
+    parse_timezone,
+    write_camtrap_dp,
+)
 from camtrap_tagger.metadata import DeploymentSheetError, load_deployment_sheet
 from camtrap_tagger.results import (
     sort_for_review,
@@ -50,6 +56,17 @@ def parse_args(argv=None):
                         help="images from one deployment this close together form one event "
                              f"(default: {pipeline.DEFAULT_GAP_MINUTES})")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
+
+    dp = parser.add_argument_group("Camtrap DP export (needs --deployments with coordinates and dates)")
+    dp.add_argument("--camtrap-dp", action="store_true",
+                    help="also write a Camtrap DP 1.0.2 data package to <out>/camtrap-dp/")
+    dp.add_argument("--timezone", help="time zone of the camera clocks, e.g. America/Los_Angeles "
+                                       "or -07:00 (required for --camtrap-dp)")
+    dp.add_argument("--project-title", help="project title (default: the input folder's name)")
+    dp.add_argument("--contributor", action="append", default=[], metavar='"NAME <EMAIL>"',
+                    help="package contact; repeat for several people")
+    dp.add_argument("--sampling-design", choices=SAMPLING_DESIGNS, default="opportunistic",
+                    help="how camera locations were chosen (default: opportunistic)")
     args = parser.parse_args(argv)
 
     # SpeciesNet doesn't validate these: a typo like "US" silently disables geofencing.
@@ -67,6 +84,17 @@ def parse_args(argv=None):
         parser.error("--threshold must be between 0 and 1")
     if args.event_gap <= 0:
         parser.error("--event-gap must be more than 0 minutes")
+    if args.camtrap_dp:
+        if not args.timezone:
+            parser.error("--camtrap-dp needs --timezone (camera clocks have no time zone)")
+        if not args.deployments:
+            parser.error("--camtrap-dp needs --deployments (Camtrap DP requires coordinates and "
+                         "start/end for every deployment)")
+    if args.timezone:
+        try:
+            args.tz = parse_timezone(args.timezone)
+        except ValueError as e:
+            parser.error(f"--timezone: {e}")
     return args
 
 
@@ -85,6 +113,11 @@ def main(argv=None):
         except (OSError, DeploymentSheetError) as e:
             raise SystemExit(f"Error: problems with deployment sheet {args.deployments}:\n"
                              + "\n".join(f"  - {p}" for p in getattr(e, "problems", [str(e)])))
+        incomplete = [d.deployment_id for d in deployments
+                      if None in (d.latitude, d.longitude, d.start, d.end)]
+        if args.camtrap_dp and incomplete:
+            raise SystemExit("Error: --camtrap-dp needs latitude, longitude, start and end for every "
+                             f"deployment in the sheet; missing for: {', '.join(incomplete)}")
 
     results, predictions = pipeline.run(
         source,
@@ -108,11 +141,24 @@ def main(argv=None):
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
 
+    if args.camtrap_dp:
+        results["warnings"] += write_camtrap_dp(
+            results, os.path.join(out, "camtrap-dp"), source, args.tz,
+            project_title=args.project_title or os.path.basename(source),
+            contributors=[parse_contributor(c) for c in args.contributor],
+            sampling_design=args.sampling_design,
+        )
+        if not args.contributor:
+            results["warnings"].append("Camtrap DP package has no contributors; add --contributor "
+                                       "(or edit datapackage.json) before sharing it")
+
     visualized = 0
     if not args.no_viz:
         visualized = visualize_results(results, source, os.path.join(out, "visualizations"))
 
     print_summary(results, out, review_counts, visualized)
+    if args.camtrap_dp:
+        print(f"Camtrap DP:      {os.path.join(out, 'camtrap-dp')}")
 
 
 def print_summary(results, out, review_counts, visualized):

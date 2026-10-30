@@ -19,7 +19,10 @@ Repository = "https://github.com/leeandyg/camtrap-tagger"
 camtrap-tagger = "camtrap_tagger.cli:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "frictionless>=5.21.0",
+    "pytest",
+]
 
 [build-system]
 requires = ["hatchling"]
