@@ -13,7 +13,7 @@ classifier).
 
 > **Project status:** started in November 2025 as a personal experiment, picked back up and
 > cleaned up in October 2026. Per-animal labeling, the original reason for this project, is now
-> built into SpeciesNet itself (see [below](#how-this-relates-to-speciesnet)), so the main value
+> built into SpeciesNet itself (see [below](#why-this-exists)), so the main value
 > here is everything around it: visualization, review folders, a flat results file, and an
 > [evaluation](#evaluation) of both approaches on data SpeciesNet likely hasn't seen.
 
@@ -32,7 +32,7 @@ classifier).
    reporting only confident results. In testing this rarely found a missed animal; see
    [evaluation](#evaluation).
 
-## How this relates to SpeciesNet
+## Why this exists
 
 When this project started (November 2025, on SpeciesNet 5.0.3), SpeciesNet gave one label per
 image, even when several animals were in the frame. This project worked around that by cropping

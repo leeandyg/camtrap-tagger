@@ -9,7 +9,11 @@ authors = [{ name = "Andy Lee" }]
 dependencies = [
     "speciesnet==5.0.6",
     "pillow",
+    "tqdm",
 ]
+
+[project.urls]
+Repository = "https://github.com/leeandyg/camtrap-tagger"
 
 [project.scripts]
 camtrap-tagger = "camtrap_tagger.cli:main"
