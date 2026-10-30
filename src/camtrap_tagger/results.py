@@ -225,9 +225,42 @@ def species_counts(entries):
             for label, n in detections.most_common()}
 
 
-def build_results(predictions, metadata, threshold):
-    """Flatten SpeciesNet predictions into the results dict (metadata, predictions, summary)."""
-    entries = [e for pred in predictions for e in image_entries(pred, threshold)]
+def deployment_summary(deployments, image_info, entries):
+    """One row per deployment: its sheet fields plus image and detection counts."""
+    rows = []
+    for d in deployments:
+        paths = [p for p, info in image_info.items() if info["deployment_id"] == d.deployment_id]
+        times = sorted(t for p in paths if (t := image_info[p]["timestamp"]))
+        rows.append({
+            "deploymentID": d.deployment_id,
+            "folder": d.folder,
+            "latitude": d.latitude,
+            "longitude": d.longitude,
+            "start": d.start.isoformat() if d.start else None,
+            "end": d.end.isoformat() if d.end else None,
+            "locationName": d.location_name,
+            "images": len(paths),
+            "first_image": times[0] if times else None,
+            "last_image": times[-1] if times else None,
+            "images_outside_deployment": sum(image_info[p]["outside_deployment"] for p in paths),
+            "animal_detections": sum(e.get("deployment_id") == d.deployment_id
+                                     and e["category"] == "animal" for e in entries),
+        })
+    return rows
+
+
+def build_results(predictions, metadata, threshold, image_info=None, deployments=None,
+                  warnings=None):
+    """Flatten SpeciesNet predictions into the results dict.
+
+    image_info maps filepath → deployment_id, timestamp, timestamp_source and
+    outside_deployment (from pipeline.run); those fields are added to every entry.
+    """
+    image_info = image_info or {}
+    entries = [
+        {"filepath": e["filepath"], **image_info.get(pred["filepath"], {}), **e}
+        for pred in predictions for e in image_entries(pred, threshold)
+    ]
 
     summary = {
         "total_images": len(predictions),
@@ -253,6 +286,10 @@ def build_results(predictions, metadata, threshold):
         if e.get("rollup_status") == "geofence_rollup":
             summary["geofencing_rollups"] += 1
     summary["species"] = species_counts(entries)
+    summary["images_without_time"] = sum(i["timestamp"] is None for i in image_info.values())
+    summary["images_with_file_time"] = sum(
+        i["timestamp_source"] == "file_modified" for i in image_info.values())
+    summary["images_outside_deployment"] = sum(i["outside_deployment"] for i in image_info.values())
 
     return {
         "metadata": {
@@ -263,6 +300,8 @@ def build_results(predictions, metadata, threshold):
         },
         "predictions": entries,
         "summary": summary,
+        "deployments": deployment_summary(deployments or [], image_info, entries),
+        "warnings": warnings or [],
     }
 
 
@@ -272,9 +311,13 @@ def write_json(data, path):
         json.dump(data, f, indent=2)
 
 
-CSV_COLUMNS = ["file", "detection_index", "category", "prediction", "species_conf", "detector_conf",
-               "bbox_x", "bbox_y", "bbox_width", "bbox_height", "prediction_raw", "rollup_status",
-               "prediction_source", "taxonomy_5part", "note"]
+CSV_COLUMNS = ["file", "deployment_id", "timestamp", "detection_index", "category", "prediction",
+               "species_conf", "detector_conf", "bbox_x", "bbox_y", "bbox_width", "bbox_height",
+               "prediction_raw", "rollup_status", "prediction_source", "taxonomy_5part", "note",
+               "timestamp_source", "outside_deployment"]
+DEPLOYMENT_COLUMNS = ["deploymentID", "folder", "latitude", "longitude", "start", "end",
+                      "locationName", "images", "first_image", "last_image",
+                      "images_outside_deployment", "animal_detections"]
 
 
 def _rounded(value):
@@ -293,6 +336,15 @@ def write_csv(results, path, source_root):
             row["file"] = os.path.relpath(e["filepath"], source_root)
             row.update(zip(["bbox_x", "bbox_y", "bbox_width", "bbox_height"], map(_rounded, bbox)))
             writer.writerow(row)
+
+
+def write_deployments_csv(results, path):
+    """Write deployments.csv: one row per deployment with coordinates and counts."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=DEPLOYMENT_COLUMNS)
+        writer.writeheader()
+        writer.writerows(results["deployments"])
 
 
 def write_species_csv(results, path):

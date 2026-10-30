@@ -11,6 +11,7 @@ from speciesnet.utils import IMG_EXTENSIONS, build_classifier_result, load_rgb_i
 from tqdm import tqdm
 
 from camtrap_tagger.backends import CropBackend, UpstreamBackend
+from camtrap_tagger.metadata import assign_deployments, read_timestamp
 from camtrap_tagger.results import build_results, parse_ensemble_prediction
 
 WHOLE_IMAGE_MODEL = "kaggle:google/speciesnet/pyTorch/v4.0.3b/1"
@@ -80,8 +81,12 @@ def recheck_blanks(predictions, ensemble, model_name, country=None, admin1_regio
 
 def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WHOLE_IMAGE_MODEL,
         country=None, admin1_region=None, threshold=DEFAULT_THRESHOLD, recheck=False,
-        crops_dir=None):
+        crops_dir=None, deployments=None, file_time_fallback=False):
     """Tag every image under `source`.
+
+    `deployments` is an optional list from metadata.load_deployment_sheet; without it each
+    folder is its own deployment. `file_time_fallback` uses file modified times for images
+    without an EXIF capture time.
 
     Returns (results, predictions): the flat per-detection results dict, and the raw
     SpeciesNet predictions it was built from.
@@ -89,6 +94,18 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
     filepaths = list_images(source)
     if not filepaths:
         raise ValueError(f"No images found in {source}")
+
+    assigned, all_deployments, warnings = assign_deployments(filepaths, source, deployments)
+    by_id = {d.deployment_id: d for d in all_deployments}
+    image_info = {}
+    for path in filepaths:
+        timestamp, timestamp_source = read_timestamp(path, file_time_fallback)
+        image_info[path] = {
+            "deployment_id": assigned[path],
+            "timestamp": timestamp,
+            "timestamp_source": timestamp_source,
+            "outside_deployment": not by_id[assigned[path]].contains(timestamp),
+        }
 
     timing = {}
     start = time.perf_counter()
@@ -120,4 +137,5 @@ def run(source, *, backend="upstream", model=DEFAULT_MODEL, whole_image_model=WH
         "admin1_region": admin1_region,
         "timing_seconds": timing,
     }
-    return build_results(predictions, metadata, threshold), predictions
+    results = build_results(predictions, metadata, threshold, image_info, all_deployments, warnings)
+    return results, predictions

@@ -84,6 +84,8 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--threshold N` | `0.1` | Minimum detector confidence for a detection to count |
 | `--model NAME` | SpeciesNet v4.0.3a | Crop classifier model |
 | `--recheck` | off | Rerun frames with no detections through the whole-image model |
+| `--deployments CSV` | none | Deployment sheet with coordinates and dates (see below) |
+| `--file-times` | off | Use file modified times for images without an EXIF capture time |
 | `--no-viz` | | Don't draw boxes |
 
 Images are found recursively (jpg, png, tif, webp). Output mirrors the input's subfolders:
@@ -93,12 +95,36 @@ Images are found recursively (jpg, png, tif, webp). Output mirrors the input's s
   results.json                 one entry per detection + summary (counts per category and species)
   results.csv                  the same entries as a spreadsheet, paths relative to the input
   species_counts.csv           animal detections and images per species
+  deployments.csv              per deployment: coordinates, dates, image and detection counts
   speciesnet_predictions.json  raw SpeciesNet output, for debugging
   visualizations/              images with boxes and labels
   review/blank/                images with nothing found
   review/unknown/              images with at least one unidentified detection
   crops/                       per-animal crops (crop backend only)
 ```
+
+### Capture times and deployments
+
+Each image's capture time is read from its EXIF data. Images without one get an empty
+timestamp. `--file-times` falls back to the file's modified time instead, which is only right
+if the files were copied off the card with their dates kept; a downloaded file's modified
+time is the download time.
+
+A deployment is one camera at one place for one period. By default every folder of images is
+a deployment. A deployment sheet adds coordinates and dates:
+
+```csv
+deploymentID,folder,latitude,longitude,start,end,locationName
+ridge-2024,site1/camA,44.12,-123.45,2024-05-01,2024-08-31,North ridge
+creek-2024,site1/camB,44.10,-123.41,2024-05-01,2024-08-31,Creek
+```
+
+`folder` is relative to the input folder; images in its subfolders belong to it too.
+`deploymentID` and `folder` are required. The sheet is checked before any model runs, and
+every problem is listed at once (duplicate IDs, impossible coordinates, unreadable dates,
+folders that don't exist, with a suggestion for likely typos). Folders missing from the sheet
+get their own deployment, and images taken outside a deployment's dates are flagged
+(`outside_deployment` in `results.csv`).
 
 ### Backends
 
@@ -121,6 +147,10 @@ Each entry in `results.json` is one detection:
 ```json
 {
   "filepath": "/data/site3/IMG_0042.jpg",
+  "deployment_id": "site3",
+  "timestamp": "2016-05-30T17:46:35",
+  "timestamp_source": "exif",
+  "outside_deployment": false,
   "detection_index": 2,
   "category": "animal",
   "prediction": "rabbit and hare family",
@@ -192,11 +222,12 @@ uv run python eval/run_eval.py eval/data/<dataset> --country USA
 ## Development
 
 ```bash
-uv run pytest        # ~60 tests, a few seconds, no models needed
+uv run pytest        # ~75 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
-`backends.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
+`backends.py`, `metadata.py` (capture times and deployments), `results.py`, `visualize.py`,
+`cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 

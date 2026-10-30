@@ -7,11 +7,18 @@ import re
 from speciesnet.geolocation import US_ADMIN1_REGION_TO_ABBREVIATION
 
 from camtrap_tagger import pipeline
-from camtrap_tagger.results import sort_for_review, write_csv, write_json, write_species_csv
+from camtrap_tagger.metadata import DeploymentSheetError, load_deployment_sheet
+from camtrap_tagger.results import (
+    sort_for_review,
+    write_csv,
+    write_deployments_csv,
+    write_json,
+    write_species_csv,
+)
 from camtrap_tagger.visualize import visualize_results
 
-
 SPECIES_SHOWN = 15
+DEPLOYMENTS_SHOWN = 15
 
 
 def parse_args(argv=None):
@@ -31,6 +38,12 @@ def parse_args(argv=None):
     parser.add_argument("--recheck", action="store_true",
                         help="rerun images with no detections through the whole-image model; "
                              "reports only confident results (rarely finds a missed animal)")
+    parser.add_argument("--deployments", metavar="CSV",
+                        help="deployment sheet: deploymentID, folder (relative to the input), and "
+                             "optionally latitude, longitude, start, end, locationName")
+    parser.add_argument("--file-times", action="store_true",
+                        help="use file modified times for images without an EXIF capture time "
+                             "(only correct if files were copied off the card with dates kept)")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
     args = parser.parse_args(argv)
 
@@ -57,6 +70,15 @@ def main(argv=None):
         raise SystemExit(f"Error: '{args.folder}' is not a folder.")
     out = os.path.abspath(args.out or f"{source}_tagged")
 
+    # Check the sheet before loading any models, so mistakes surface in seconds.
+    deployments = None
+    if args.deployments:
+        try:
+            deployments = load_deployment_sheet(args.deployments, source)
+        except (OSError, DeploymentSheetError) as e:
+            raise SystemExit(f"Error: problems with deployment sheet {args.deployments}:\n"
+                             + "\n".join(f"  - {p}" for p in getattr(e, "problems", [str(e)])))
+
     results, predictions = pipeline.run(
         source,
         backend=args.backend,
@@ -66,11 +88,14 @@ def main(argv=None):
         threshold=args.threshold,
         recheck=args.recheck,
         crops_dir=os.path.join(out, "crops") if args.backend == "crop" else None,
+        deployments=deployments,
+        file_time_fallback=args.file_times,
     )
 
     write_json(results, os.path.join(out, "results.json"))
     write_csv(results, os.path.join(out, "results.csv"), source)
     write_species_csv(results, os.path.join(out, "species_counts.csv"))
+    write_deployments_csv(results, os.path.join(out, "deployments.csv"))
     write_json({"predictions": predictions}, os.path.join(out, "speciesnet_predictions.json"))
     review_counts = sort_for_review(results, source, os.path.join(out, "review"))
 
@@ -103,6 +128,30 @@ def print_summary(results, out, review_counts, visualized):
             print(f"  - {label + ':':28}{counts['detections']:>5} / {counts['images']}")
         if len(species) > SPECIES_SHOWN:
             print(f"  ... {len(species) - SPECIES_SHOWN} more in species_counts.csv")
+
+    deployments = results["deployments"]
+    if len(deployments) > 1 or any(d["latitude"] is not None for d in deployments):
+        print(f"\nDeployments ({len(deployments)}; images, first – last image, animal detections):")
+        for d in deployments[:DEPLOYMENTS_SHOWN]:
+            span = f"{(d['first_image'] or '?')[:10]} – {(d['last_image'] or '?')[:10]}"
+            print(f"  - {d['deploymentID'] + ':':28}{d['images']:>5}  {span}  {d['animal_detections']}")
+        if len(deployments) > DEPLOYMENTS_SHOWN:
+            print(f"  ... {len(deployments) - DEPLOYMENTS_SHOWN} more in deployments.csv")
+
+    notes = list(results["warnings"])
+    if summary["images_without_time"]:
+        notes.append(f"{summary['images_without_time']} image(s) have no EXIF capture time; their "
+                     "timestamp is left empty (--file-times uses file modified times instead)")
+    if summary["images_with_file_time"]:
+        notes.append(f"{summary['images_with_file_time']} image(s) had no EXIF capture time; "
+                     "used the file's modified time instead")
+    if summary["images_outside_deployment"]:
+        notes.append(f"{summary['images_outside_deployment']} image(s) were taken outside their "
+                     "deployment's start/end (outside_deployment in results.csv)")
+    if notes:
+        print("\nWarnings:")
+        for note in notes:
+            print(f"  - {note}")
 
     if metadata["geofencing_applied"]:
         print(f"\nGeofencing ({metadata['country']}):")
