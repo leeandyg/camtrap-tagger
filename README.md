@@ -14,7 +14,8 @@ classifier).
 > **Project status:** started in November 2025 as a personal experiment, picked back up and
 > cleaned up in October 2026. Per-animal labeling, the original reason for this project, is now
 > built into SpeciesNet itself (see [below](#how-this-relates-to-speciesnet)), so the main value
-> here is everything around it: the blank recheck, visualization, review folders and flat results.
+> here is everything around it: visualization, review folders, a flat results file, and an
+> [evaluation](#evaluation) of both approaches on data SpeciesNet likely hasn't seen.
 
 ## What it does
 
@@ -23,12 +24,13 @@ classifier).
 3. **Applies SpeciesNet's decision rules per animal**: location-based species filtering
    (geofencing) and taxonomic fallback. A low-confidence species becomes its genus or family
    rather than a wrong guess.
-4. **Rechecks empty frames.** Images with no detection are run through SpeciesNet's whole-image
-   classifier, which catches some animals the detector missed (flagged `detector_missed`).
-5. **Draws** color-coded boxes with detector and species confidence, placing labels so they
+4. **Draws** color-coded boxes with detector and species confidence, placing labels so they
    don't overlap.
-6. **Sorts** blank and unknown images into review folders.
-7. **Writes one flat results file** with one entry per detection.
+5. **Sorts** blank and unknown images into review folders.
+6. **Writes one flat results file** with one entry per detection.
+7. **Optionally rechecks empty frames** (`--recheck`) with SpeciesNet's whole-image classifier,
+   reporting only confident results. In testing this rarely found a missed animal; see
+   [evaluation](#evaluation).
 
 ## How this relates to SpeciesNet
 
@@ -43,11 +45,12 @@ compared.
 
 What camtrap-tagger adds on top of SpeciesNet:
 
-- Whole-image recheck of frames where the detector found nothing
 - Built-in visualization (SpeciesNet points to separate tools for this)
 - Review folders for blank and unknown images
 - A flat, per-detection results file instead of nested per-image output
 - Input validation (SpeciesNet silently ignores a mistyped country code)
+- An optional whole-image recheck of frames where the detector found nothing
+- An evaluation harness and results on held-out data (`eval/`)
 
 If you want a desktop app rather than a command-line tool, see
 [AddaxAI](https://addaxdatascience.com/addaxai/), which also runs SpeciesNet.
@@ -62,8 +65,8 @@ cd camtrap-tagger
 uv sync
 ```
 
-The first run downloads the SpeciesNet models from Kaggle (about 500 MB each, cached afterwards;
-the whole-image model is only downloaded if some image has no detections).
+The first run downloads the SpeciesNet model from Kaggle (about 500 MB, cached afterwards;
+`--recheck` needs a second model of the same size).
 Runs on CPU, Apple Silicon (MPS) or NVIDIA GPUs.
 
 ## Usage
@@ -80,7 +83,7 @@ uv run camtrap-tagger path/to/images --country USA --admin1-region CA
 | `--backend {upstream,crop}` | `upstream` | How animals are classified (see below) |
 | `--threshold N` | `0.1` | Minimum detector confidence for a detection to count |
 | `--model NAME` | SpeciesNet v4.0.3a | Crop classifier model |
-| `--no-recheck` | | Skip the whole-image recheck of empty frames |
+| `--recheck` | off | Rerun frames with no detections through the whole-image model |
 | `--no-viz` | | Don't draw boxes |
 
 Images are found recursively (jpg, png, tif, webp). Output mirrors the input's subfolders:
@@ -106,7 +109,8 @@ detection becomes classifier input:
 - **`crop`**: the original method. Classifies animal detections only, cropping each to 480×480
   with Lanczos resampling, and saves the crops for review.
 
-Which one is more accurate hasn't been measured yet; an evaluation on labeled data is planned.
+On held-out data the two are equally accurate and `upstream` is about 1.5× faster (see
+[evaluation](#evaluation)), so `upstream` is the default.
 
 ### Results format
 
@@ -134,14 +138,61 @@ Each entry in `results.json` is one detection:
 - `bbox` is `[x, y, width, height]` as fractions of the image size. It is `null` for animals
   found by the whole-image recheck, which also carry `"note": "detector_missed"`.
 
+## Evaluation
+
+Both backends were tested on two [LILA](https://lila.science) datasets published in 2026, after
+the data snapshot SpeciesNet's paper describes, so they are likely (not certainly) unseen by the
+model. Older LILA datasets are probably in SpeciesNet's training data and give inflated numbers:
+on ENA24 the same pipeline labels 74% of animals at the exact species.
+
+| | Oregon Critters | AMMonitor Camera Traps |
+|---|---|---|
+| Sample (multi-animal / single / empty images) | 395 (95 / 200 / 100) | 500 (50 / 250 / 200) |
+| Ground truth | a box per animal | labels per image |
+| Location given to SpeciesNet | USA, Oregon | USA |
+
+| Metric | Oregon: upstream | Oregon: crop | AMMonitor: upstream | AMMonitor: crop |
+|---|---|---|---|---|
+| Animals labeled at the exact species | 29.6% | 28.4% | 48.9% | 48.0% |
+| Correct at any level (species, genus, family, ...) | 74.0% | 72.8% | 71.4% | 71.7% |
+| Wrong label | 4.9% | 6.1% | 10.6% | 11.1% |
+| Missed (no detection) | 14.1% | 14.1% | 7.4% | 7.1% |
+| Multi-animal images with every animal correct | 41% | 42% | 24% | 32% |
+| Empty images correctly left blank | 96% | 96% | 94.5% | 93.5% |
+| Seconds per image (Apple Silicon) | 0.29 | 0.44 | 0.26 | 0.39 |
+
+What this shows:
+
+- **The backends are equally accurate**, within a point on both datasets, and `upstream` is about
+  1.5× faster, so it is the default.
+- **Most correct answers are broader than a species.** In Oregon, the classifier usually thinks
+  Roosevelt elk are red deer (a European species); geofencing rules that out for the USA and falls
+  back to "cervidae family" instead of a wrong answer. Small birds often come back as just "bird".
+- **The whole-image recheck rarely helps.** Unfiltered, it recovered 1 and 2 missed animals but
+  marked about 7% of truly empty frames as animals or unknowns. With the confidence filter it now
+  uses, it marks no empty frames but recovered 0 and 1 animals, so it is off by default.
+
+Caveats: samples are a few hundred animals each, so differences of a point or two are noise.
+Boxes are matched at IoU ≥ 0.5, and about half of Oregon's "missed" animals overlap a predicted
+box just below that. AMMonitor is scored per image, not per animal. Images containing people are
+withheld from LILA, so human and vehicle accuracy was not measured. SpeciesNet v4.0.3's training
+data is not documented, so "unseen" can't be guaranteed.
+
+To reproduce (downloads about 1.5 GB of images into `eval/data/`, which is gitignored):
+
+```bash
+uv run python eval/prepare_lila.py --help   # sample a LILA dataset
+uv run python eval/run_eval.py eval/data/<dataset> --country USA
+```
+
 ## Development
 
 ```bash
-uv run pytest        # ~50 tests, a few seconds, no models needed
+uv run pytest        # ~60 tests, a few seconds, no models needed
 ```
 
 Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank recheck),
-`backends.py`, `results.py`, `visualize.py`, `cli.py`.
+`backends.py`, `results.py`, `visualize.py`, `cli.py`. The evaluation scripts are in `eval/`.
 
 ## Credits
 
@@ -156,6 +207,12 @@ Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank rech
   Yousif H, Kays R, He Z. *Dynamic Programming Selection of Object Proposals for Sequence-Level
   Animal Species Classification in the Wild.* IEEE Transactions on Circuits and Systems for Video
   Technology, 2019.
+- **Evaluation data** from LILA BC: [Oregon Critters](https://lila.science/datasets/oregon-critters/)
+  (CDLA-Permissive; Appel CL, Lesmeister DB, Kay J, Hallerud M, Tosa MI, Levi T. *Oregon Critters:
+  A computer vision model for multispecies wildlife detection from two camera trap modalities.*
+  In review) and [AMMonitor Camera Traps](https://lila.science/datasets/ammonitor-camera-traps/)
+  (a public-domain composite of ten datasets from the AMMonitor community; see that page for
+  each one's citation). No evaluation images are included in this repository.
 
 ## License
 

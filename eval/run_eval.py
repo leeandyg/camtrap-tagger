@@ -81,7 +81,7 @@ def main():
                 predictions = json.load(f)["predictions"]
         else:
             results, predictions = pipeline.run(
-                os.path.join(args.data, "images"), backend=backend,
+                os.path.join(args.data, "images"), backend=backend, recheck=True,
                 country=args.country, admin1_region=args.admin1_region,
             )
             write_json(results, results_path)

@@ -9,6 +9,7 @@ def test_defaults():
     assert args.backend == "upstream"
     assert args.threshold == 0.1
     assert args.country is None
+    assert args.recheck is False
 
 
 def test_location_is_uppercased():

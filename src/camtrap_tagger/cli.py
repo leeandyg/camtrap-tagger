@@ -25,8 +25,9 @@ def parse_args(argv=None):
     parser.add_argument("--threshold", type=float, default=pipeline.DEFAULT_THRESHOLD,
                         help="minimum detector confidence for a detection to count (default: 0.1)")
     parser.add_argument("--model", default=pipeline.DEFAULT_MODEL, help="SpeciesNet crop model")
-    parser.add_argument("--no-recheck", action="store_true",
-                        help="skip the whole-image recheck of images with no detections")
+    parser.add_argument("--recheck", action="store_true",
+                        help="rerun images with no detections through the whole-image model; "
+                             "reports only confident results (rarely finds a missed animal)")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
     args = parser.parse_args(argv)
 
@@ -60,7 +61,7 @@ def main(argv=None):
         country=args.country,
         admin1_region=args.admin1_region,
         threshold=args.threshold,
-        recheck=not args.no_recheck,
+        recheck=args.recheck,
         crops_dir=os.path.join(out, "crops") if args.backend == "crop" else None,
     )
 
