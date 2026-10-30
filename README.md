@@ -218,3 +218,5 @@ Code lives in `src/camtrap_tagger/`: `pipeline.py` (orchestration and blank rech
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+This is an independent project, not affiliated with Google or the SpeciesNet team.
