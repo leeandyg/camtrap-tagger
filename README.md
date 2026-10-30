@@ -11,6 +11,11 @@ classifier).
 "rabbit and hare family" rather than guessing a species. Image: ENA24 dataset (see
 [credits](#credits)).*
 
+> **Project status:** started in November 2025 as a personal experiment, picked back up and
+> cleaned up in October 2026. Per-animal labeling, the original reason for this project, is now
+> built into SpeciesNet itself (see [below](#how-this-relates-to-speciesnet)), so the main value
+> here is everything around it: the blank recheck, visualization, review folders and flat results.
+
 ## What it does
 
 1. **Finds** animals, people and vehicles with MegaDetector.
@@ -27,10 +32,14 @@ classifier).
 
 ## How this relates to SpeciesNet
 
-This started before SpeciesNet could classify more than one animal per image: SpeciesNet 5.0.3
-gave one label per image, so this project cropped every animal and ran the decision logic per
-crop. SpeciesNet 5.0.6 now classifies every detection itself, and camtrap-tagger uses that as its
-default backend. The original crop method is kept as a second backend for comparison.
+When this project started (November 2025, on SpeciesNet 5.0.3), SpeciesNet gave one label per
+image, even when several animals were in the frame. This project worked around that by cropping
+every animal and running SpeciesNet's decision logic on each crop separately.
+
+**SpeciesNet now does this itself.** As of version 5.0.6, SpeciesNet classifies every detection
+in an image and returns a separate label for each one. camtrap-tagger uses that built-in mode as
+its default backend. The original crop method is kept as a second backend so the two can be
+compared.
 
 What camtrap-tagger adds on top of SpeciesNet:
 
