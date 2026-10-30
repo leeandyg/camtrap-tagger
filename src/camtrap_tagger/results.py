@@ -20,7 +20,7 @@ def parse_taxonomy_label(label):
             - taxonomy_uuid
             - taxonomy_5part (class;order;family;genus;species) padded to 5 parts
             - taxonomy_raw (original label string)
-            - common_name (last non-empty rank)
+            - common_name (7th part if present, else last non-empty rank)
     """
     result = {
         "taxonomy_uuid": None,
@@ -43,6 +43,10 @@ def parse_taxonomy_label(label):
         tax_parts.append("")
 
     result["taxonomy_5part"] = ';'.join(tax_parts)
+
+    if len(parts) >= 7 and parts[6]:
+        result["common_name"] = parts[6]
+        return result
 
     for part in reversed(tax_parts):
         if part:
@@ -211,7 +215,7 @@ def build_results(predictions, metadata, threshold):
 
     summary = {
         "total_images": len(predictions),
-        "total_detections": len(entries),
+        "total_detections": sum(e["category"] != "error" for e in entries),
         "animals": 0,
         "blanks": 0,
         "humans": 0,

@@ -2,6 +2,9 @@
 
 import argparse
 import os
+import re
+
+from speciesnet.geolocation import US_ADMIN1_REGION_TO_ABBREVIATION
 
 from camtrap_tagger import pipeline
 from camtrap_tagger.results import sort_for_review, write_json
@@ -25,7 +28,22 @@ def parse_args(argv=None):
     parser.add_argument("--no-recheck", action="store_true",
                         help="skip the whole-image recheck of images with no detections")
     parser.add_argument("--no-viz", action="store_true", help="skip drawing boxes on images")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+
+    # SpeciesNet doesn't validate these: a typo like "US" silently disables geofencing.
+    if args.country:
+        args.country = args.country.upper()
+        if not re.fullmatch(r"[A-Z]{3}", args.country):
+            parser.error(f"--country must be a 3-letter ISO code like USA, KEN or GBR (got '{args.country}')")
+    if args.admin1_region:
+        args.admin1_region = args.admin1_region.upper()
+        if args.country != "USA":
+            parser.error("--admin1-region is only supported with --country USA")
+        if args.admin1_region not in US_ADMIN1_REGION_TO_ABBREVIATION.values():
+            parser.error(f"--admin1-region must be a US state code like CA or NY (got '{args.admin1_region}')")
+    if not 0 <= args.threshold <= 1:
+        parser.error("--threshold must be between 0 and 1")
+    return args
 
 
 def main(argv=None):
@@ -34,13 +52,12 @@ def main(argv=None):
     if not os.path.isdir(source):
         raise SystemExit(f"Error: '{args.folder}' is not a folder.")
     out = os.path.abspath(args.out or f"{source}_tagged")
-    country = args.country.upper() if args.country else None
 
     results, predictions = pipeline.run(
         source,
         backend=args.backend,
         model=args.model,
-        country=country,
+        country=args.country,
         admin1_region=args.admin1_region,
         threshold=args.threshold,
         recheck=not args.no_recheck,
